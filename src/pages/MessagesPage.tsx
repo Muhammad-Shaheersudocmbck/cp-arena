@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Send, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { getRankColor, SAFE_PROFILE_COLUMNS } from "@/lib/types";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, DirectMessage } from "@/lib/types";
@@ -62,7 +63,11 @@ export default function MessagesPage() {
           (msg.sender_id === profile.id && msg.receiver_id === recipientId) ||
           (msg.sender_id === recipientId && msg.receiver_id === profile.id)
         ) {
-          setMessages((prev) => [...prev, { ...msg, senderProfile: msg.sender_id === profile.id ? profile : recipient || undefined }]);
+          // Deduplicate: skip if already added optimistically
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, { ...msg, senderProfile: msg.sender_id === profile.id ? profile : recipient || undefined }];
+          });
         }
       })
       .subscribe();
@@ -75,8 +80,27 @@ export default function MessagesPage() {
 
   const sendMessage = async () => {
     if (!message.trim() || !profile || !recipientId) return;
-    await supabase.from("direct_messages").insert({ sender_id: profile.id, receiver_id: recipientId, message: message.trim() } as any);
+    const text = message.trim();
     setMessage("");
+    
+    // Optimistically add to UI immediately
+    const optimisticMsg: DirectMessage & { senderProfile?: Profile } = {
+      id: crypto.randomUUID(),
+      sender_id: profile.id,
+      receiver_id: recipientId,
+      message: text,
+      read_at: null,
+      created_at: new Date().toISOString(),
+      senderProfile: profile,
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
+    
+    const { error } = await supabase.from("direct_messages").insert({ sender_id: profile.id, receiver_id: recipientId, message: text } as any);
+    if (error) {
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+      toast.error("Failed to send message");
+    }
   };
 
   if (!profile) return null;
