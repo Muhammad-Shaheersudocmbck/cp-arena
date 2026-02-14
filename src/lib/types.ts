@@ -65,6 +65,40 @@ export interface Blog {
   updated_at: string;
 }
 
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string;
+  link: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface GroupChat {
+  id: string;
+  name: string;
+  description: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface GroupChatMember {
+  id: string;
+  group_id: string;
+  user_id: string;
+  joined_at: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  group_id: string;
+  sender_id: string;
+  message: string;
+  created_at: string;
+}
+
 export function getRankFromRating(rating: number): string {
   if (rating < 900) return "Beginner";
   if (rating < 1100) return "Newbie";
