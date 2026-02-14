@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Link as LinkIcon, Check, Loader2, Trophy, Swords, BarChart3, Pencil, UserPlus, MessageSquare } from "lucide-react";
 import { Link } from "react-router-dom";
 import RatingBadge from "@/components/RatingBadge";
-import { getRankFromRating, getRankColor } from "@/lib/types";
+import { getRankFromRating, getRankColor, SAFE_PROFILE_COLUMNS } from "@/lib/types";
 import { toast } from "sonner";
 import axios from "axios";
 import type { Profile, Match } from "@/lib/types";
@@ -26,7 +26,7 @@ export default function ProfilePage() {
     queryKey: ["profile", id],
     enabled: !!id,
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("id", id!).single();
+      const { data } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", id!).single();
       return data as Profile;
     },
   });
@@ -75,9 +75,15 @@ export default function ProfilePage() {
 
   const verifyCfHandle = async () => {
     if (!cfHandleInput.trim() || !myProfile) return;
+    // Validate CF handle format: 3-24 chars, alphanumeric + hyphens/underscores
+    const handle = cfHandleInput.trim();
+    if (!/^[a-zA-Z0-9_-]{3,24}$/.test(handle)) {
+      toast.error("Invalid handle format (3-24 chars, letters/digits/hyphens only)");
+      return;
+    }
     setVerifying(true);
     try {
-      const res = await axios.get(`https://codeforces.com/api/user.info?handles=${cfHandleInput.trim()}`);
+      const res = await axios.get(`https://codeforces.com/api/user.info?handles=${encodeURIComponent(handle)}`);
       if (res.data.status === "OK" && res.data.result.length > 0) {
         const cfUser = res.data.result[0];
         await supabase.from("profiles").update({ cf_handle: cfUser.handle, cf_rating: cfUser.rating || 0 }).eq("id", myProfile.id);

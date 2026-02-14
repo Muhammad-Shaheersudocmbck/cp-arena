@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Send, ArrowLeft } from "lucide-react";
-import { getRankColor } from "@/lib/types";
+import { getRankColor, SAFE_PROFILE_COLUMNS } from "@/lib/types";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, DirectMessage } from "@/lib/types";
 
@@ -19,7 +19,7 @@ export default function MessagesPage() {
     queryKey: ["recipient", recipientId],
     enabled: !!recipientId,
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("id", recipientId!).single();
+      const { data } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", recipientId!).single();
       return data as Profile;
     },
   });
