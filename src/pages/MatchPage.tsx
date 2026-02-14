@@ -161,7 +161,7 @@ export default function MatchPage() {
                   <span className="rounded-full bg-primary/20 px-3 py-1 text-xs font-mono text-primary">✓ Solved</span>
                 )}
                 {match.status === "finished" && match.player1_rating_change != null && (
-                  <span className={`font-mono text-sm font-bold ${match.player1_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
+                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player1_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
                     {match.player1_rating_change > 0 ? "+" : ""}{match.player1_rating_change}
                   </span>
                 )}
@@ -184,7 +184,7 @@ export default function MatchPage() {
                   <span className="rounded-full bg-primary/20 px-3 py-1 text-xs font-mono text-primary">✓ Solved</span>
                 )}
                 {match.status === "finished" && match.player2_rating_change != null && (
-                  <span className={`font-mono text-sm font-bold ${match.player2_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
+                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player2_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
                     {match.player2_rating_change > 0 ? "+" : ""}{match.player2_rating_change}
                   </span>
                 )}

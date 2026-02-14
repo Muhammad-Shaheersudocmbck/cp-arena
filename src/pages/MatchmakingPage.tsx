@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Swords, Clock, Loader2, X, Zap } from "lucide-react";
+import { Swords, Clock, Loader2, X, Zap, Link2, Copy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+
 
 export default function MatchmakingPage() {
   const { profile } = useAuth();
@@ -181,6 +182,33 @@ export default function MatchmakingPage() {
             <Zap className="h-5 w-5" />
             {!profile.cf_handle ? "Connect Codeforces Handle First" : "Find Match"}
           </button>
+
+          {/* Friend Challenge */}
+          {profile.cf_handle && (
+            <button
+              onClick={async () => {
+                const code = Math.random().toString(36).substring(2, 10);
+                const { data, error } = await supabase.from("matches").insert({
+                  player1_id: profile.id,
+                  challenge_code: code,
+                  duration,
+                  status: "waiting" as const,
+                }).select().single();
+                if (error) {
+                  toast.error("Failed to create challenge");
+                } else {
+                  const url = `${window.location.origin}/challenge/${code}`;
+                  navigator.clipboard.writeText(url);
+                  toast.success("Challenge link copied!");
+                  navigate(`/challenge/${code}`);
+                }
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 px-6 py-3 font-display font-medium text-primary transition-all hover:bg-primary/10"
+            >
+              <Link2 className="h-4 w-4" />
+              Challenge a Friend
+            </button>
+          )}
 
           {!profile.cf_handle && (
             <p className="mt-3 text-center text-sm text-muted-foreground">

@@ -1,12 +1,12 @@
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Swords, Trophy, Clock, TrendingUp, Users, Zap } from "lucide-react";
+import { Swords, Trophy, Clock, TrendingUp, Users, Zap, Megaphone } from "lucide-react";
 import { Link } from "react-router-dom";
 import RatingBadge from "@/components/RatingBadge";
 import PlayerCard from "@/components/PlayerCard";
 import { getRankFromRating } from "@/lib/types";
-import type { Profile, Match } from "@/lib/types";
+import type { Profile, Match, Announcement } from "@/lib/types";
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -37,6 +37,18 @@ export default function DashboardPage() {
     },
   });
 
+  const { data: announcements } = useQuery({
+    queryKey: ["announcements"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("announcements" as any)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(3);
+      return (data || []) as unknown as Announcement[];
+    },
+  });
+
   if (!profile) return null;
 
   const totalGames = profile.wins + profile.losses + profile.draws;
@@ -44,6 +56,20 @@ export default function DashboardPage() {
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
+      {/* Announcements */}
+      {announcements && announcements.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {announcements.map((a) => (
+            <div key={a.id} className="flex items-start gap-3 rounded-xl border border-neon-cyan/20 bg-neon-cyan/5 p-4">
+              <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-neon-cyan" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">{a.title}</p>
+                <p className="text-xs text-muted-foreground">{a.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {/* Welcome banner */}
       <div className="mb-8 rounded-2xl border border-border arena-card p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

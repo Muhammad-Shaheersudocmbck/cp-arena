@@ -1,4 +1,4 @@
-import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X } from "lucide-react";
+import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, MessageSquare } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
@@ -7,6 +7,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/matchmaking", label: "Arena", icon: Swords },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/friends", label: "Friends", icon: Users },
 ];
 
 export default function Navbar() {

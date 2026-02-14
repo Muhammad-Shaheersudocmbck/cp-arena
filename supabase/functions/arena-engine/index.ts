@@ -73,8 +73,15 @@ Deno.serve(async (req) => {
           
           if (problemData.status !== "OK") continue;
 
+          // Get blacklisted problems
+          const { data: blacklist } = await supabase
+            .from("blacklisted_problems")
+            .select("contest_id, problem_index");
+          const blackSet = new Set((blacklist || []).map((b: any) => `${b.contest_id}${b.problem_index}`));
+
           const problems = problemData.result.problems.filter(
             (p: any) => p.rating && p.rating >= a.rating_min && p.rating <= a.rating_max && p.contestId
+              && !blackSet.has(`${p.contestId}${p.index}`)
           );
           
           if (problems.length === 0) continue;
