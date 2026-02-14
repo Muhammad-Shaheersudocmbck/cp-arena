@@ -3,8 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const VALID_ACTIONS = ["matchmake", "poll"] as const;
+type ValidAction = typeof VALID_ACTIONS[number];
 
 interface CFSubmission {
   id: number;
@@ -34,6 +37,18 @@ function getRank(rating: number): string {
   if (rating < 1900) return "Candidate Master";
   if (rating < 2100) return "Master";
   return "Grandmaster";
+}
+
+// Simple fetch with timeout
+async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -68,7 +83,60 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { action, ...params } = await req.json();
+    const userId = claimsData.claims.sub;
+
+    // Parse and validate input
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const action = body.action;
+    if (typeof action !== "string" || !VALID_ACTIONS.includes(action as ValidAction)) {
+      return new Response(JSON.stringify({ error: "Invalid action. Must be one of: " + VALID_ACTIONS.join(", ") }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Authorization: verify caller is an admin for system-level operations
+    const { data: isAdminResult } = await supabase.rpc("is_admin", { _user_id: userId });
+    if (!isAdminResult) {
+      // For non-admins, only allow if they are in the queue (matchmake) or a match participant (poll)
+      if (action === "matchmake") {
+        const { data: inQueue } = await supabase
+          .from("queue")
+          .select("id")
+          .eq("user_id", userId)
+          .limit(1);
+        if (!inQueue || inQueue.length === 0) {
+          return new Response(JSON.stringify({ error: "You must be in the queue to trigger matchmaking" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+      // poll is allowed for any authenticated user who is in an active match
+      if (action === "poll") {
+        const { data: activeMatch } = await supabase
+          .from("matches")
+          .select("id")
+          .eq("status", "active")
+          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .limit(1);
+        if (!activeMatch || activeMatch.length === 0) {
+          return new Response(JSON.stringify({ error: "You must be in an active match to poll" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
 
     // MATCHMAKING: Try to pair queued players
     if (action === "matchmake") {
@@ -89,9 +157,17 @@ Deno.serve(async (req) => {
           const a = queueEntries[i];
           const b = queueEntries[j];
 
-          // Fetch a random problem
-          const problemRes = await fetch("https://codeforces.com/api/problemset.problems");
-          const problemData = await problemRes.json();
+          // Fetch a random problem with timeout
+          let problemData;
+          try {
+            const problemRes = await fetchWithTimeout("https://codeforces.com/api/problemset.problems", 10000);
+            problemData = await problemRes.json();
+          } catch {
+            return new Response(JSON.stringify({ error: "Codeforces API timeout" }), {
+              status: 502,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
           
           if (problemData.status !== "OK") continue;
 
@@ -166,12 +242,11 @@ Deno.serve(async (req) => {
 
         // Check if match expired
         if (now > matchEndTime) {
-          // Time's up - determine winner or draw
           const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
           const { data: p2 } = await supabase.from("profiles").select("*").eq("id", match.player2_id!).single();
 
           let winnerId = null;
-          let scoreA = 0.5; // draw
+          let scoreA = 0.5;
 
           if (match.player1_solved_at && !match.player2_solved_at) {
             winnerId = match.player1_id;
@@ -194,7 +269,6 @@ Deno.serve(async (req) => {
             player2_rating_change: elo.changeB,
           }).eq("id", match.id);
 
-          // Update profiles
           await supabase.from("profiles").update({
             rating: p1!.rating + elo.changeA,
             rank: getRank(p1!.rating + elo.changeA),
@@ -224,7 +298,10 @@ Deno.serve(async (req) => {
           if (!player?.cf_handle) continue;
 
           try {
-            const cfRes = await fetch(`https://codeforces.com/api/user.status?handle=${player.cf_handle}&count=20`);
+            const cfRes = await fetchWithTimeout(
+              `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
+              10000
+            );
             const cfData = await cfRes.json();
 
             if (cfData.status !== "OK") continue;
@@ -233,7 +310,7 @@ Deno.serve(async (req) => {
               sub.problem.contestId === match.contest_id &&
               sub.problem.index === match.problem_index &&
               sub.verdict === "OK" &&
-              sub.creationTimeSeconds >= matchStartTime // ANTI-CHEAT: ignore pre-start submissions
+              sub.creationTimeSeconds >= matchStartTime
             );
 
             if (solved) {
@@ -260,7 +337,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    // Return generic error to client, log details server-side
+    console.error("Arena engine error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
