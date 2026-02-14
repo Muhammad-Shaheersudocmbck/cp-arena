@@ -4,20 +4,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/Navbar";
 import { Lock } from "lucide-react";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { SiteSetting } from "@/lib/types";
 
 export default function ProtectedLayout() {
   const { user, loading, profile, isAdmin } = useAuth();
 
+  // Track online status
+  useOnlineStatus();
+
   const { data: maintenance } = useQuery({
     queryKey: ["maintenance-mode"],
     queryFn: async () => {
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from("site_settings")
         .select("*")
         .eq("key", "maintenance_mode")
         .single();
-      return data as SiteSetting | null;
+      return data as unknown as SiteSetting | null;
     },
   });
 
