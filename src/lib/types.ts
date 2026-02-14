@@ -3,7 +3,7 @@ import { Tables } from "@/integrations/supabase/types";
 export type Profile = Tables<"profiles">;
 
 // Safe columns to select from profiles (excludes email for privacy)
-export const SAFE_PROFILE_COLUMNS = "id, user_id, username, avatar, rating, rank, cf_handle, cf_rating, wins, losses, draws, is_banned, created_at, updated_at" as const;
+export const SAFE_PROFILE_COLUMNS = "id, user_id, username, avatar, rating, rank, cf_handle, cf_rating, wins, losses, draws, is_banned, created_at, updated_at, online_at" as const;
 export type Match = Tables<"matches">;
 export type QueueEntry = Tables<"queue">;
 export type Report = Tables<"reports">;
@@ -13,7 +13,7 @@ export type UserRole = Tables<"user_roles">;
 export type AppRole = "user" | "admin" | "super_admin";
 export type MatchStatus = "waiting" | "active" | "finished";
 
-// New table types (added via migration)
+// Types for tables added via migration (not yet in generated types)
 export interface Friend {
   id: string;
   user_id: string;
@@ -56,6 +56,15 @@ export interface SiteSetting {
   updated_by: string | null;
 }
 
+export interface Blog {
+  id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export function getRankFromRating(rating: number): string {
   if (rating < 900) return "Beginner";
   if (rating < 1100) return "Newbie";
@@ -81,7 +90,7 @@ export function getRankColor(rating: number): string {
 export function calculateElo(
   ratingA: number,
   ratingB: number,
-  scoreA: number // 1 = win, 0 = loss, 0.5 = draw
+  scoreA: number
 ): { newRatingA: number; newRatingB: number; changeA: number; changeB: number } {
   const K = 32;
   const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));

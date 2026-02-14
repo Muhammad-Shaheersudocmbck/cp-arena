@@ -1,4 +1,4 @@
-import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, MessageSquare } from "lucide-react";
+import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, PenLine, Megaphone, AlertTriangle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
@@ -8,6 +8,9 @@ const navItems = [
   { href: "/matchmaking", label: "Arena", icon: Swords },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/friends", label: "Friends", icon: Users },
+  { href: "/blogs", label: "Blogs", icon: PenLine },
+  { href: "/announcements", label: "Announcements", icon: Megaphone },
+  { href: "/support", label: "Support", icon: AlertTriangle },
 ];
 
 export default function Navbar() {
@@ -28,14 +31,14 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden items-center gap-1 md:flex">
+        <div className="hidden items-center gap-1 lg:flex">
           {navItems.map((item) => {
             const active = location.pathname === item.href;
             return (
               <Link
                 key={item.href}
                 to={item.href}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
                   active
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -49,7 +52,7 @@ export default function Navbar() {
           {isAdmin && (
             <Link
               to="/admin"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
                 location.pathname === "/admin"
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -61,47 +64,32 @@ export default function Navbar() {
           )}
         </div>
 
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-3 lg:flex">
           {profile && (
             <Link
               to={`/profile/${profile.id}`}
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              <img
-                src={profile.avatar || ""}
-                alt="avatar"
-                className="h-6 w-6 rounded-full"
-              />
+              <img src={profile.avatar || ""} alt="avatar" className="h-6 w-6 rounded-full" />
               <span>{profile.username}</span>
             </Link>
           )}
-          <button
-            onClick={signOut}
-            className="rounded-lg p-2 text-muted-foreground transition-colors hover:text-destructive"
-          >
+          <button onClick={signOut} className="rounded-lg p-2 text-muted-foreground transition-colors hover:text-destructive">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
 
         {/* Mobile toggle */}
-        <button
-          className="rounded-lg p-2 text-muted-foreground md:hidden"
-          onClick={() => setMobileOpen(!mobileOpen)}
-        >
+        <button className="rounded-lg p-2 text-muted-foreground lg:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="border-t border-border bg-background px-4 pb-4 md:hidden">
+        <div className="border-t border-border bg-background px-4 pb-4 lg:hidden">
           {navItems.map((item) => (
-            <Link
-              key={item.href}
-              to={item.href}
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <Link key={item.href} to={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               <item.icon className="h-4 w-4" />
               {item.label}
             </Link>
