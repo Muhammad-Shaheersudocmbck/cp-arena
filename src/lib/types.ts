@@ -1,6 +1,9 @@
 import { Tables } from "@/integrations/supabase/types";
 
 export type Profile = Tables<"profiles">;
+
+// Safe columns to select from profiles (excludes email for privacy)
+export const SAFE_PROFILE_COLUMNS = "id, user_id, username, avatar, rating, rank, cf_handle, cf_rating, wins, losses, draws, is_banned, created_at, updated_at" as const;
 export type Match = Tables<"matches">;
 export type QueueEntry = Tables<"queue">;
 export type Report = Tables<"reports">;

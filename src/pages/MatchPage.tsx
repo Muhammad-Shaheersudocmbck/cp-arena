@@ -6,12 +6,13 @@ import { useState, useEffect, useRef } from "react";
 import { ExternalLink, Send, Clock, Trophy, Eye } from "lucide-react";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, Match, MatchMessage } from "@/lib/types";
+import { SAFE_PROFILE_COLUMNS } from "@/lib/types";
 
 export default function MatchPage() {
   const { matchId } = useParams();
   const { profile } = useAuth();
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<(MatchMessage & { profile?: Profile })[]>([]);
+  const [messages, setMessages] = useState<(MatchMessage & { profile?: Partial<Profile> })[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +30,7 @@ export default function MatchPage() {
     queryKey: ["player", match?.player1_id],
     enabled: !!match?.player1_id,
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("id", match!.player1_id).single();
+      const { data } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", match!.player1_id).single();
       return data as Profile;
     },
   });
@@ -38,7 +39,7 @@ export default function MatchPage() {
     queryKey: ["player", match?.player2_id],
     enabled: !!match?.player2_id,
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("id", match!.player2_id!).single();
+      const { data } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", match!.player2_id!).single();
       return data as Profile;
     },
   });
@@ -62,7 +63,7 @@ export default function MatchPage() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "match_messages", filter: `match_id=eq.${matchId}` },
         async (payload) => {
           const msg = payload.new as MatchMessage;
-          const { data: p } = await supabase.from("profiles").select("*").eq("id", msg.user_id).single();
+          const { data: p } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", msg.user_id).single();
           setMessages((prev) => [...prev, { ...msg, profile: p || undefined }]);
         }
       )
@@ -83,7 +84,7 @@ export default function MatchPage() {
       if (data) {
         const enriched = await Promise.all(
           data.map(async (msg) => {
-            const { data: p } = await supabase.from("profiles").select("*").eq("id", msg.user_id).single();
+            const { data: p } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", msg.user_id).single();
             return { ...msg, profile: p || undefined };
           })
         );
