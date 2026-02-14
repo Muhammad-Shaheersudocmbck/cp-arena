@@ -14,7 +14,14 @@ export default function MessagesPage() {
   const { profile } = useAuth();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<(DirectMessage & { senderProfile?: Profile })[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
+
+  const channelName = profile && recipientId
+    ? `typing-${[profile.id, recipientId].sort().join("-")}`
+    : null;
 
   const { data: recipient } = useQuery({
     queryKey: ["recipient", recipientId],
@@ -53,6 +60,7 @@ export default function MessagesPage() {
     },
   });
 
+  // Realtime messages
   useEffect(() => {
     if (!profile || !recipientId) return;
     const channel = supabase
@@ -63,16 +71,49 @@ export default function MessagesPage() {
           (msg.sender_id === profile.id && msg.receiver_id === recipientId) ||
           (msg.sender_id === recipientId && msg.receiver_id === profile.id)
         ) {
-          // Deduplicate: skip if already added optimistically
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
             return [...prev, { ...msg, senderProfile: msg.sender_id === profile.id ? profile : recipient || undefined }];
           });
+          // Mark as read if from peer
+          if (msg.sender_id === recipientId) {
+            supabase.from("direct_messages").update({ read_at: new Date().toISOString() } as any).eq("id", msg.id).then(() => {});
+          }
         }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile, recipientId, recipient]);
+
+  // Typing indicator channel
+  useEffect(() => {
+    if (!channelName || !profile) return;
+    const channel = supabase
+      .channel(channelName)
+      .on("broadcast", { event: "typing" }, (payload) => {
+        if (payload.payload?.userId !== profile.id) {
+          setPeerTyping(true);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => setPeerTyping(false), 3000);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [channelName, profile?.id]);
+
+  // Send typing event
+  const handleTyping = () => {
+    if (!channelName || !profile) return;
+    if (!isTyping) {
+      setIsTyping(true);
+      supabase.channel(channelName).send({
+        type: "broadcast",
+        event: "typing",
+        payload: { userId: profile.id },
+      });
+      setTimeout(() => setIsTyping(false), 2000);
+    }
+  };
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
@@ -82,8 +123,7 @@ export default function MessagesPage() {
     if (!message.trim() || !profile || !recipientId) return;
     const text = message.trim();
     setMessage("");
-    
-    // Optimistically add to UI immediately
+
     const optimisticMsg: DirectMessage & { senderProfile?: Profile } = {
       id: crypto.randomUUID(),
       sender_id: profile.id,
@@ -94,10 +134,9 @@ export default function MessagesPage() {
       senderProfile: profile,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
-    
+
     const { error } = await supabase.from("direct_messages").insert({ sender_id: profile.id, receiver_id: recipientId, message: text } as any);
     if (error) {
-      // Remove optimistic message on failure
       setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
       toast.error("Failed to send message");
     }
@@ -141,10 +180,27 @@ export default function MessagesPage() {
               })}
             </div>
           )}
+          {/* Typing indicator */}
+          {peerTyping && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "300ms" }} />
+              </div>
+              {recipient?.username} is typing...
+            </div>
+          )}
         </div>
         <div className="border-t border-border p-4">
           <div className="flex gap-2">
-            <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Type a message..." className="flex-1 rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />
+            <input
+              value={message}
+              onChange={(e) => { setMessage(e.target.value); handleTyping(); }}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              placeholder="Type a message..."
+              className="flex-1 rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+            />
             <button onClick={sendMessage} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90"><Send className="h-4 w-4" /></button>
           </div>
         </div>

@@ -1,15 +1,18 @@
-import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, PenLine, Megaphone, AlertTriangle } from "lucide-react";
+import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, PenLine, Megaphone, AlertTriangle, MessageSquare, Bell, MessagesSquare } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/matchmaking", label: "Arena", icon: Swords },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/friends", label: "Friends", icon: Users },
+  { href: "/groups", label: "Groups", icon: MessagesSquare },
   { href: "/blogs", label: "Blogs", icon: PenLine },
-  { href: "/announcements", label: "Announcements", icon: Megaphone },
+  { href: "/announcements", label: "News", icon: Megaphone },
   { href: "/support", label: "Support", icon: AlertTriangle },
 ];
 
@@ -17,6 +20,36 @@ export default function Navbar() {
   const { profile, isAdmin, signOut } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Unread DMs count
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ["unread-dms", profile?.id],
+    enabled: !!profile,
+    refetchInterval: 10000,
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("direct_messages")
+        .select("*", { count: "exact", head: true })
+        .eq("receiver_id", profile!.id)
+        .is("read_at", null);
+      return count || 0;
+    },
+  });
+
+  // Unread notifications count
+  const { data: unreadNotifs = 0 } = useQuery({
+    queryKey: ["unread-notifs", profile?.id],
+    enabled: !!profile,
+    refetchInterval: 15000,
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", profile!.id)
+        .eq("read", false);
+      return count || 0;
+    },
+  });
 
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -64,7 +97,27 @@ export default function Navbar() {
           )}
         </div>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden items-center gap-2 lg:flex">
+          {/* Messages icon with badge */}
+          <Link to="/friends" className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:text-foreground">
+            <MessageSquare className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </Link>
+
+          {/* Notifications icon with badge */}
+          <Link to="/notifications" className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:text-foreground">
+            <Bell className="h-5 w-5" />
+            {unreadNotifs > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {unreadNotifs > 99 ? "99+" : unreadNotifs}
+              </span>
+            )}
+          </Link>
+
           {profile && (
             <Link
               to={`/profile/${profile.id}`}
@@ -80,9 +133,28 @@ export default function Navbar() {
         </div>
 
         {/* Mobile toggle */}
-        <button className="rounded-lg p-2 text-muted-foreground lg:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-1 lg:hidden">
+          {/* Mobile badges */}
+          <Link to="/friends" className="relative rounded-lg p-2 text-muted-foreground">
+            <MessageSquare className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </Link>
+          <Link to="/notifications" className="relative rounded-lg p-2 text-muted-foreground">
+            <Bell className="h-5 w-5" />
+            {unreadNotifs > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {unreadNotifs > 9 ? "9+" : unreadNotifs}
+              </span>
+            )}
+          </Link>
+          <button className="rounded-lg p-2 text-muted-foreground" onClick={() => setMobileOpen(!mobileOpen)}>
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu */}
