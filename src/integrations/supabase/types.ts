@@ -938,6 +938,15 @@ export type Database = {
       }
     }
     Functions: {
+      finalize_match: {
+        Args: {
+          _is_draw?: boolean
+          _match_id: string
+          _resigned_by?: string
+          _winner_id: string
+        }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

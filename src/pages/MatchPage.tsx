@@ -7,7 +7,7 @@ import { ExternalLink, Send, Clock, Trophy, Flag, Handshake, ShieldAlert } from 
 import { toast } from "sonner";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, Match, MatchMessage } from "@/lib/types";
-import { SAFE_PROFILE_COLUMNS, calculateElo, getRankFromRating } from "@/lib/types";
+import { SAFE_PROFILE_COLUMNS } from "@/lib/types";
 
 export default function MatchPage() {
   const { matchId } = useParams();
@@ -63,66 +63,34 @@ export default function MatchPage() {
   }, [match?.id, match?.status, match?.start_time, match?.duration, profile?.id]);
 
   const endMatchOnTimeout = async () => {
-    if (!match || !player1 || !player2 || match.status !== "active") return;
+    if (!match || match.status !== "active") return;
     let winnerId: string | null = null;
-    let scoreA = 0.5;
-    if (match.player1_solved_at && !match.player2_solved_at) { winnerId = match.player1_id; scoreA = 1; }
-    else if (!match.player1_solved_at && match.player2_solved_at) { winnerId = match.player2_id; scoreA = 0; }
+    if (match.player1_solved_at && !match.player2_solved_at) winnerId = match.player1_id;
+    else if (!match.player1_solved_at && match.player2_solved_at) winnerId = match.player2_id;
 
-    const elo = calculateElo(player1.rating, player2.rating, scoreA);
-    await supabase.from("matches").update({
-      status: "finished" as const,
-      winner_id: winnerId,
-      player1_rating_change: elo.changeA,
-      player2_rating_change: elo.changeB,
-    } as any).eq("id", match.id);
+    const { error } = await supabase.rpc("finalize_match", {
+      _match_id: match.id,
+      _winner_id: winnerId,
+    });
+    if (error) { console.error("finalize_match error:", error); toast.error("Failed to end match"); return; }
 
-    await supabase.from("profiles").update({
-      rating: player1.rating + elo.changeA,
-      rank: getRankFromRating(player1.rating + elo.changeA),
-      wins: player1.wins + (scoreA === 1 ? 1 : 0),
-      losses: player1.losses + (scoreA === 0 ? 1 : 0),
-      draws: player1.draws + (scoreA === 0.5 ? 1 : 0),
-    } as any).eq("id", match.player1_id);
-    await supabase.from("profiles").update({
-      rating: player2.rating + elo.changeB,
-      rank: getRankFromRating(player2.rating + elo.changeB),
-      wins: player2.wins + (scoreA === 0 ? 1 : 0),
-      losses: player2.losses + (scoreA === 1 ? 1 : 0),
-      draws: player2.draws + (scoreA === 0.5 ? 1 : 0),
-    } as any).eq("id", match.player2_id!);
-
+    queryClient.invalidateQueries({ queryKey: ["player"] });
     refetchMatch();
     toast.info("Match ended - time's up!");
   };
 
   const resign = async () => {
-    if (!match || !profile || !player1 || !player2 || match.status !== "active") return;
+    if (!match || !profile || match.status !== "active") return;
     const winnerId = match.player1_id === profile.id ? match.player2_id : match.player1_id;
-    const scoreA = winnerId === match.player1_id ? 1 : 0;
-    const elo = calculateElo(player1.rating, player2.rating, scoreA);
 
-    await supabase.from("matches").update({
-      status: "finished" as const,
-      winner_id: winnerId,
-      resigned_by: profile.id,
-      player1_rating_change: elo.changeA,
-      player2_rating_change: elo.changeB,
-    } as any).eq("id", match.id);
+    const { error } = await supabase.rpc("finalize_match", {
+      _match_id: match.id,
+      _winner_id: winnerId,
+      _resigned_by: profile.id,
+    });
+    if (error) { console.error("finalize_match error:", error); toast.error("Failed to resign"); return; }
 
-    await supabase.from("profiles").update({
-      rating: player1.rating + elo.changeA,
-      rank: getRankFromRating(player1.rating + elo.changeA),
-      wins: player1.wins + (scoreA === 1 ? 1 : 0),
-      losses: player1.losses + (scoreA === 0 ? 1 : 0),
-    } as any).eq("id", match.player1_id);
-    await supabase.from("profiles").update({
-      rating: player2.rating + elo.changeB,
-      rank: getRankFromRating(player2.rating + elo.changeB),
-      wins: player2.wins + (scoreA === 0 ? 1 : 0),
-      losses: player2.losses + (scoreA === 1 ? 1 : 0),
-    } as any).eq("id", match.player2_id!);
-
+    queryClient.invalidateQueries({ queryKey: ["player"] });
     refetchMatch();
     toast.info("You resigned.");
   };
@@ -130,29 +98,16 @@ export default function MatchPage() {
   const offerDraw = async () => {
     if (!match || !profile) return;
     const drawOfferedBy = (match as any).draw_offered_by;
-    
+
     if (drawOfferedBy && drawOfferedBy !== profile.id) {
-      if (!player1 || !player2) return;
-      const elo = calculateElo(player1.rating, player2.rating, 0.5);
-      await supabase.from("matches").update({
-        status: "finished" as const,
-        winner_id: null,
-        draw_offered_by: null,
-        player1_rating_change: elo.changeA,
-        player2_rating_change: elo.changeB,
-      } as any).eq("id", match.id);
+      const { error } = await supabase.rpc("finalize_match", {
+        _match_id: match.id,
+        _winner_id: null,
+        _is_draw: true,
+      });
+      if (error) { console.error("finalize_match error:", error); toast.error("Failed to accept draw"); return; }
 
-      await supabase.from("profiles").update({
-        rating: player1.rating + elo.changeA,
-        rank: getRankFromRating(player1.rating + elo.changeA),
-        draws: player1.draws + 1,
-      } as any).eq("id", match.player1_id);
-      await supabase.from("profiles").update({
-        rating: player2.rating + elo.changeB,
-        rank: getRankFromRating(player2.rating + elo.changeB),
-        draws: player2.draws + 1,
-      } as any).eq("id", match.player2_id!);
-
+      queryClient.invalidateQueries({ queryKey: ["player"] });
       refetchMatch();
       toast.info("Match ended in a draw!");
     } else {
@@ -237,7 +192,7 @@ export default function MatchPage() {
 
   const isParticipant = profile && match && (match.player1_id === profile.id || match.player2_id === profile.id);
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-  
+
   const bothJoined = match?.player2_id != null;
   const problemUrl = bothJoined && match?.contest_id && match?.problem_index
     ? `https://codeforces.com/problemset/problem/${match.contest_id}/${match.problem_index}`
