@@ -41,12 +41,21 @@ export default function MatchmakingPage() {
     },
   });
 
-  // Check for new active matches
+  // Check for new active matches and periodically trigger matchmaking
   useQuery({
     queryKey: ["my-active-match", profile?.id],
     enabled: !!profile && !!queueEntry,
-    refetchInterval: 3000,
+    refetchInterval: 5000,
     queryFn: async () => {
+      // Try to trigger matchmaking each poll
+      try {
+        await supabase.functions.invoke("arena-engine", {
+          body: { action: "matchmake" },
+        });
+      } catch (e) {
+        console.error("Matchmake poll failed:", e);
+      }
+
       const { data } = await supabase
         .from("matches")
         .select("*")
@@ -71,9 +80,20 @@ export default function MatchmakingPage() {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["my-queue"] });
       toast.success("Joined matchmaking queue!");
+      // Trigger matchmaking via edge function
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await supabase.functions.invoke("arena-engine", {
+            body: { action: "matchmake" },
+          });
+        }
+      } catch (e) {
+        console.error("Matchmake trigger failed:", e);
+      }
     },
     onError: () => toast.error("Failed to join queue"),
   });
