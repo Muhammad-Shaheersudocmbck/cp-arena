@@ -143,26 +143,32 @@ export type Database = {
       direct_messages: {
         Row: {
           created_at: string
+          edited_at: string | null
           id: string
           message: string
           read_at: string | null
           receiver_id: string
+          reply_to: string | null
           sender_id: string
         }
         Insert: {
           created_at?: string
+          edited_at?: string | null
           id?: string
           message: string
           read_at?: string | null
           receiver_id: string
+          reply_to?: string | null
           sender_id: string
         }
         Update: {
           created_at?: string
+          edited_at?: string | null
           id?: string
           message?: string
           read_at?: string | null
           receiver_id?: string
+          reply_to?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -178,6 +184,13 @@ export type Database = {
             columns: ["receiver_id"]
             isOneToOne: false
             referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_messages_reply_to_fkey"
+            columns: ["reply_to"]
+            isOneToOne: false
+            referencedRelation: "direct_messages"
             referencedColumns: ["id"]
           },
           {
@@ -334,23 +347,29 @@ export type Database = {
       group_messages: {
         Row: {
           created_at: string
+          edited_at: string | null
           group_id: string
           id: string
           message: string
+          reply_to: string | null
           sender_id: string
         }
         Insert: {
           created_at?: string
+          edited_at?: string | null
           group_id: string
           id?: string
           message: string
+          reply_to?: string | null
           sender_id: string
         }
         Update: {
           created_at?: string
+          edited_at?: string | null
           group_id?: string
           id?: string
           message?: string
+          reply_to?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -359,6 +378,13 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "group_chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_messages_reply_to_fkey"
+            columns: ["reply_to"]
+            isOneToOne: false
+            referencedRelation: "group_messages"
             referencedColumns: ["id"]
           },
           {
@@ -428,6 +454,7 @@ export type Database = {
           challenge_code: string | null
           contest_id: number | null
           created_at: string
+          draw_offered_by: string | null
           duration: number
           id: string
           match_type: string
@@ -440,6 +467,7 @@ export type Database = {
           problem_index: string | null
           problem_name: string | null
           problem_rating: number | null
+          resigned_by: string | null
           start_time: string | null
           status: Database["public"]["Enums"]["match_status"]
           winner_id: string | null
@@ -448,6 +476,7 @@ export type Database = {
           challenge_code?: string | null
           contest_id?: number | null
           created_at?: string
+          draw_offered_by?: string | null
           duration?: number
           id?: string
           match_type?: string
@@ -460,6 +489,7 @@ export type Database = {
           problem_index?: string | null
           problem_name?: string | null
           problem_rating?: number | null
+          resigned_by?: string | null
           start_time?: string | null
           status?: Database["public"]["Enums"]["match_status"]
           winner_id?: string | null
@@ -468,6 +498,7 @@ export type Database = {
           challenge_code?: string | null
           contest_id?: number | null
           created_at?: string
+          draw_offered_by?: string | null
           duration?: number
           id?: string
           match_type?: string
@@ -480,6 +511,7 @@ export type Database = {
           problem_index?: string | null
           problem_name?: string | null
           problem_rating?: number | null
+          resigned_by?: string | null
           start_time?: string | null
           status?: Database["public"]["Enums"]["match_status"]
           winner_id?: string | null
