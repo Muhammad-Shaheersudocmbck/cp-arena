@@ -1,4 +1,4 @@
-import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, PenLine, Megaphone, AlertTriangle, MessageSquare, Bell, MessagesSquare } from "lucide-react";
+import { Swords, Trophy, Users, BarChart3, Shield, LogOut, User, Menu, X, PenLine, Megaphone, AlertTriangle, MessageSquare, Bell } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useState } from "react";
@@ -10,7 +10,6 @@ const navItems = [
   { href: "/matchmaking", label: "Arena", icon: Swords },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/friends", label: "Friends", icon: Users },
-  { href: "/groups", label: "Groups", icon: MessagesSquare },
   { href: "/blogs", label: "Blogs", icon: PenLine },
   { href: "/announcements", label: "News", icon: Megaphone },
   { href: "/support", label: "Support", icon: AlertTriangle },
@@ -21,7 +20,6 @@ export default function Navbar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Unread DMs count
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ["unread-dms", profile?.id],
     enabled: !!profile,
@@ -36,7 +34,6 @@ export default function Navbar() {
     },
   });
 
-  // Unread notifications count
   const { data: unreadNotifs = 0 } = useQuery({
     queryKey: ["unread-notifs", profile?.id],
     enabled: !!profile,
@@ -63,7 +60,6 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Desktop nav */}
         <div className="hidden items-center gap-1 lg:flex">
           {navItems.map((item) => {
             const active = location.pathname === item.href;
@@ -72,9 +68,7 @@ export default function Navbar() {
                 key={item.href}
                 to={item.href}
                 className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <item.icon className="h-4 w-4" />
@@ -86,9 +80,7 @@ export default function Navbar() {
             <Link
               to="/admin"
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
-                location.pathname === "/admin"
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                location.pathname === "/admin" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Shield className="h-4 w-4" />
@@ -98,7 +90,6 @@ export default function Navbar() {
         </div>
 
         <div className="hidden items-center gap-2 lg:flex">
-          {/* Messages icon with badge */}
           <Link to="/friends" className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:text-foreground">
             <MessageSquare className="h-5 w-5" />
             {unreadCount > 0 && (
@@ -107,8 +98,6 @@ export default function Navbar() {
               </span>
             )}
           </Link>
-
-          {/* Notifications icon with badge */}
           <Link to="/notifications" className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:text-foreground">
             <Bell className="h-5 w-5" />
             {unreadNotifs > 0 && (
@@ -117,7 +106,6 @@ export default function Navbar() {
               </span>
             )}
           </Link>
-
           {profile && (
             <Link
               to={`/profile/${profile.id}`}
@@ -132,9 +120,7 @@ export default function Navbar() {
           </button>
         </div>
 
-        {/* Mobile toggle */}
         <div className="flex items-center gap-1 lg:hidden">
-          {/* Mobile badges */}
           <Link to="/friends" className="relative rounded-lg p-2 text-muted-foreground">
             <MessageSquare className="h-5 w-5" />
             {unreadCount > 0 && (
@@ -157,7 +143,6 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && (
         <div className="border-t border-border bg-background px-4 pb-4 lg:hidden">
           {navItems.map((item) => (

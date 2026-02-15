@@ -18,7 +18,7 @@ import ChallengePage from "@/pages/ChallengePage";
 import BlogsPage from "@/pages/BlogsPage";
 import AnnouncementsPage from "@/pages/AnnouncementsPage";
 import SupportPage from "@/pages/SupportPage";
-import GroupChatsPage from "@/pages/GroupChatsPage";
+
 import NotificationsPage from "@/pages/NotificationsPage";
 import NotFound from "@/pages/NotFound";
 
@@ -47,7 +47,7 @@ const App = () => (
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/announcements" element={<AnnouncementsPage />} />
               <Route path="/support" element={<SupportPage />} />
-              <Route path="/groups" element={<GroupChatsPage />} />
+              
               <Route path="/notifications" element={<NotificationsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

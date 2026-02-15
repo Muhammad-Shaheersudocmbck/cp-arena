@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
-import { ExternalLink, Send, Clock, Trophy, Eye, Flag, Handshake } from "lucide-react";
+import { ExternalLink, Send, Clock, Trophy, Flag, Handshake, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, Match, MatchMessage } from "@/lib/types";
@@ -11,7 +11,7 @@ import { SAFE_PROFILE_COLUMNS, calculateElo, getRankFromRating } from "@/lib/typ
 
 export default function MatchPage() {
   const { matchId } = useParams();
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<(MatchMessage & { profile?: Partial<Profile> })[]>([]);
@@ -54,7 +54,6 @@ export default function MatchPage() {
       const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
       setTimeLeft(remaining);
 
-      // Auto-end match when time is up (only player1 triggers to avoid race)
       if (remaining === 0 && profile && match.player1_id === profile.id) {
         clearInterval(interval);
         await endMatchOnTimeout();
@@ -78,7 +77,6 @@ export default function MatchPage() {
       player2_rating_change: elo.changeB,
     } as any).eq("id", match.id);
 
-    // Update profiles
     await supabase.from("profiles").update({
       rating: player1.rating + elo.changeA,
       rank: getRankFromRating(player1.rating + elo.changeA),
@@ -133,9 +131,7 @@ export default function MatchPage() {
     if (!match || !profile) return;
     const drawOfferedBy = (match as any).draw_offered_by;
     
-    // If opponent already offered draw, accept it
     if (drawOfferedBy && drawOfferedBy !== profile.id) {
-      // Both accepted -> draw
       if (!player1 || !player2) return;
       const elo = calculateElo(player1.rating, player2.rating, 0.5);
       await supabase.from("matches").update({
@@ -160,11 +156,23 @@ export default function MatchPage() {
       refetchMatch();
       toast.info("Match ended in a draw!");
     } else {
-      // Offer draw
       await supabase.from("matches").update({ draw_offered_by: profile.id } as any).eq("id", match.id);
       refetchMatch();
       toast.success("Draw offered to opponent.");
     }
+  };
+
+  // Admin force-end match (no rating changes)
+  const adminEndMatch = async () => {
+    if (!match || match.status !== "active") return;
+    await supabase.from("matches").update({
+      status: "finished" as const,
+      winner_id: null,
+      player1_rating_change: 0,
+      player2_rating_change: 0,
+    } as any).eq("id", match.id);
+    refetchMatch();
+    toast.success("Match ended by admin (no rating changes).");
   };
 
   // Realtime match updates
@@ -228,10 +236,8 @@ export default function MatchPage() {
   };
 
   const isParticipant = profile && match && (match.player1_id === profile.id || match.player2_id === profile.id);
-  const isSpectator = profile && match && !isParticipant;
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
   
-  // Only show problem link if both players have joined
   const bothJoined = match?.player2_id != null;
   const problemUrl = bothJoined && match?.contest_id && match?.problem_index
     ? `https://codeforces.com/problemset/problem/${match.contest_id}/${match.problem_index}`
@@ -251,12 +257,6 @@ export default function MatchPage() {
   return (
     <div className="container mx-auto max-w-5xl px-4 py-6">
       <div className="mb-6 rounded-2xl border border-border arena-card p-6">
-        {isSpectator && (
-          <div className="mb-3 flex items-center gap-2 text-sm text-neon-cyan">
-            <Eye className="h-4 w-4" /> Spectating
-          </div>
-        )}
-
         {/* Timer */}
         <div className="mb-4 text-center">
           {match.status === "active" ? (
@@ -318,7 +318,7 @@ export default function MatchPage() {
           </div>
         </div>
 
-        {/* Problem link - only when both players joined */}
+        {/* Problem link */}
         {problemUrl ? (
           <div className="mt-6 text-center">
             <a href={problemUrl} target="_blank" rel="noopener noreferrer"
@@ -334,7 +334,7 @@ export default function MatchPage() {
           </div>
         ) : null}
 
-        {/* Resign / Draw buttons */}
+        {/* Resign / Draw buttons for participants */}
         {isParticipant && match.status === "active" && (
           <div className="mt-6 flex justify-center gap-3">
             <button onClick={resign} className="inline-flex items-center gap-2 rounded-xl border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10">
@@ -348,35 +348,46 @@ export default function MatchPage() {
             </button>
           </div>
         )}
+
+        {/* Admin end match button */}
+        {isAdmin && match.status === "active" && (
+          <div className="mt-4 flex justify-center">
+            <button onClick={adminEndMatch} className="inline-flex items-center gap-2 rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20">
+              <ShieldAlert className="h-4 w-4" /> End Match (Admin)
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Chat */}
-      <div className="rounded-2xl border border-border bg-card">
-        <div className="border-b border-border p-4"><h3 className="font-display font-semibold">Match Chat</h3></div>
-        <div ref={chatRef} className="h-64 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground">No messages yet</p>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((msg) => (
-                <div key={msg.id} className="flex items-start gap-2">
-                  <img src={msg.profile?.avatar || ""} alt="" className="h-6 w-6 rounded-full" />
-                  <div>
-                    <span className="text-xs font-semibold text-primary">{msg.profile?.username || "User"}</span>
-                    <p className="text-sm text-foreground">{msg.message}</p>
+      {/* Chat - only for participants */}
+      {isParticipant && (
+        <div className="rounded-2xl border border-border bg-card">
+          <div className="border-b border-border p-4"><h3 className="font-display font-semibold">Match Chat</h3></div>
+          <div ref={chatRef} className="h-64 overflow-y-auto p-4">
+            {messages.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground">No messages yet</p>
+            ) : (
+              <div className="space-y-3">
+                {messages.map((msg) => (
+                  <div key={msg.id} className="flex items-start gap-2">
+                    <img src={msg.profile?.avatar || ""} alt="" className="h-6 w-6 rounded-full" />
+                    <div>
+                      <span className="text-xs font-semibold text-primary">{msg.profile?.username || "User"}</span>
+                      <p className="text-sm text-foreground">{msg.message}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="border-t border-border p-4">
+            <div className="flex gap-2">
+              <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Type a message..." className="flex-1 rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />
+              <button onClick={sendMessage} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90"><Send className="h-4 w-4" /></button>
             </div>
-          )}
-        </div>
-        <div className="border-t border-border p-4">
-          <div className="flex gap-2">
-            <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Type a message..." className="flex-1 rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />
-            <button onClick={sendMessage} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90"><Send className="h-4 w-4" /></button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
