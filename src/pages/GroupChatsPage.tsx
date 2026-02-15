@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Send, ArrowLeft, Users, Trash2, UserPlus, LogOut as LeaveIcon } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Send, Users, UserPlus, LogOut as LeaveIcon } from "lucide-react";
 import { toast } from "sonner";
 import { SAFE_PROFILE_COLUMNS, getRankColor } from "@/lib/types";
 import RatingBadge from "@/components/RatingBadge";
@@ -20,28 +20,38 @@ export default function GroupChatsPage() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberResults, setMemberResults] = useState<Profile[]>([]);
+  const [creating, setCreating] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
 
-  const { data: groups = [] } = useQuery({
+  // Fetch groups - use service-level approach: get all group_chats where user is a member
+  const { data: groups = [], refetch: refetchGroups } = useQuery({
     queryKey: ["my-groups", profile?.id],
     enabled: !!profile,
     queryFn: async () => {
-      const { data: memberships } = await supabase
+      // First get the group IDs the user is a member of
+      const { data: memberships, error: memErr } = await supabase
         .from("group_chat_members")
         .select("group_id")
         .eq("user_id", profile!.id);
-      if (!memberships || memberships.length === 0) return [];
+      
+      if (memErr || !memberships || memberships.length === 0) return [];
+      
       const groupIds = memberships.map((m: any) => m.group_id);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("group_chats")
         .select("*")
         .in("id", groupIds)
         .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("Groups fetch error:", error);
+        return [];
+      }
       return (data || []) as GroupChat[];
     },
   });
 
-  const { data: members = [] } = useQuery({
+  const { data: members = [], refetch: refetchMembers } = useQuery({
     queryKey: ["group-members", activeGroup],
     enabled: !!activeGroup,
     queryFn: async () => {
@@ -56,7 +66,7 @@ export default function GroupChatsPage() {
     },
   });
 
-  // Load messages for active group
+  // Load messages
   useQuery({
     queryKey: ["group-messages", activeGroup],
     enabled: !!activeGroup,
@@ -105,28 +115,45 @@ export default function GroupChatsPage() {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  const createGroup = useMutation({
-    mutationFn: async () => {
-      if (!profile || !newGroupName.trim()) return;
+  const createGroup = async () => {
+    if (!profile || !newGroupName.trim() || creating) return;
+    setCreating(true);
+    try {
+      // Step 1: Create the group
       const { data, error } = await supabase
         .from("group_chats")
-        .insert({ name: newGroupName.trim(), description: newGroupDesc.trim(), created_by: profile.id } as any)
+        .insert({ name: newGroupName.trim(), description: newGroupDesc.trim() || "", created_by: profile.id } as any)
         .select()
         .single();
-      if (error) throw error;
-      // Add creator as member
-      await supabase.from("group_chat_members").insert({ group_id: (data as any).id, user_id: profile.id } as any);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+      
+      if (error) {
+        console.error("Group creation error:", error);
+        toast.error("Failed to create group: " + error.message);
+        return;
+      }
+
+      // Step 2: Add creator as member
+      const { error: memberError } = await supabase
+        .from("group_chat_members")
+        .insert({ group_id: (data as any).id, user_id: profile.id } as any);
+      
+      if (memberError) {
+        console.error("Member add error:", memberError);
+        toast.error("Group created but failed to add you as member: " + memberError.message);
+        return;
+      }
+
       setShowCreate(false);
       setNewGroupName("");
       setNewGroupDesc("");
+      refetchGroups();
       toast.success("Group created!");
-    },
-    onError: () => toast.error("Failed to create group"),
-  });
+    } catch (e: any) {
+      toast.error("Error: " + e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const sendGroupMessage = async () => {
     if (!message.trim() || !profile || !activeGroup) return;
@@ -138,6 +165,8 @@ export default function GroupChatsPage() {
       sender_id: profile.id,
       message: text,
       created_at: new Date().toISOString(),
+      edited_at: null,
+      reply_to: null,
       senderProfile: profile,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
@@ -165,7 +194,7 @@ export default function GroupChatsPage() {
       toast.error("Failed to add member (may already be in group)");
     } else {
       toast.success("Member added!");
-      queryClient.invalidateQueries({ queryKey: ["group-members"] });
+      refetchMembers();
       setShowAddMember(false);
       setMemberSearch("");
       setMemberResults([]);
@@ -177,7 +206,7 @@ export default function GroupChatsPage() {
     await supabase.from("group_chat_members").delete().eq("group_id", activeGroup).eq("user_id", profile.id);
     setActiveGroup(null);
     setMessages([]);
-    queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+    refetchGroups();
     toast.success("Left group");
   };
 
@@ -192,42 +221,28 @@ export default function GroupChatsPage() {
       <div className="flex gap-4">
         {/* Sidebar */}
         <div className="w-64 shrink-0 space-y-2">
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex w-full items-center gap-2 rounded-xl border border-primary/30 px-4 py-3 text-sm font-medium text-primary hover:bg-primary/10"
-          >
+          <button onClick={() => setShowCreate(true)} className="flex w-full items-center gap-2 rounded-xl border border-primary/30 px-4 py-3 text-sm font-medium text-primary hover:bg-primary/10">
             <Plus className="h-4 w-4" /> New Group
           </button>
 
           {showCreate && (
             <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <input
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="Group name"
-                className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
-              />
-              <input
-                value={newGroupDesc}
-                onChange={(e) => setNewGroupDesc(e.target.value)}
-                placeholder="Description (optional)"
-                className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
-              />
+              <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="Group name" className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />
+              <input value={newGroupDesc} onChange={(e) => setNewGroupDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />
               <div className="flex gap-2">
-                <button onClick={() => createGroup.mutate()} disabled={!newGroupName.trim()} className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">Create</button>
+                <button onClick={createGroup} disabled={!newGroupName.trim() || creating} className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
+                  {creating ? "Creating..." : "Create"}
+                </button>
                 <button onClick={() => setShowCreate(false)} className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">Cancel</button>
               </div>
             </div>
           )}
 
           {groups.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => { setActiveGroup(g.id); setMessages([]); }}
+            <button key={g.id} onClick={() => { setActiveGroup(g.id); setMessages([]); }}
               className={`flex w-full items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all ${
                 activeGroup === g.id ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground hover:border-primary/30"
-              }`}
-            >
+              }`}>
               <Users className="h-4 w-4 shrink-0" />
               <div className="min-w-0">
                 <p className="truncate">{g.name}</p>
@@ -236,32 +251,24 @@ export default function GroupChatsPage() {
             </button>
           ))}
 
-          {groups.length === 0 && !showCreate && (
-            <p className="text-center text-sm text-muted-foreground">No groups yet</p>
-          )}
+          {groups.length === 0 && !showCreate && <p className="text-center text-sm text-muted-foreground">No groups yet</p>}
         </div>
 
         {/* Chat area */}
         <div className="flex-1">
           {activeGroup && activeGroupData ? (
             <div className="rounded-2xl border border-border bg-card">
-              {/* Header */}
               <div className="flex items-center justify-between border-b border-border p-4">
                 <div>
                   <h3 className="font-display font-semibold">{activeGroupData.name}</h3>
                   <p className="text-xs text-muted-foreground">{members.length} members</p>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => setShowAddMember(!showAddMember)} className="rounded-lg p-2 text-muted-foreground hover:text-primary" title="Add member">
-                    <UserPlus className="h-4 w-4" />
-                  </button>
-                  <button onClick={leaveGroup} className="rounded-lg p-2 text-muted-foreground hover:text-destructive" title="Leave group">
-                    <LeaveIcon className="h-4 w-4" />
-                  </button>
+                  <button onClick={() => setShowAddMember(!showAddMember)} className="rounded-lg p-2 text-muted-foreground hover:text-primary" title="Add member"><UserPlus className="h-4 w-4" /></button>
+                  <button onClick={leaveGroup} className="rounded-lg p-2 text-muted-foreground hover:text-destructive" title="Leave group"><LeaveIcon className="h-4 w-4" /></button>
                 </div>
               </div>
 
-              {/* Add member */}
               {showAddMember && (
                 <div className="border-b border-border p-3">
                   <div className="flex gap-2">
@@ -281,7 +288,6 @@ export default function GroupChatsPage() {
                 </div>
               )}
 
-              {/* Messages */}
               <div ref={chatRef} className="h-[50vh] overflow-y-auto p-4">
                 {messages.length === 0 ? (
                   <p className="text-center text-sm text-muted-foreground">No messages yet. Start the conversation!</p>
@@ -309,7 +315,6 @@ export default function GroupChatsPage() {
                 )}
               </div>
 
-              {/* Input */}
               <div className="border-t border-border p-4">
                 <div className="flex gap-2">
                   <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendGroupMessage()} placeholder="Type a message..." className="flex-1 rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground" />

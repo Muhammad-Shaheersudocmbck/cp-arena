@@ -28,6 +28,8 @@ export interface DirectMessage {
   receiver_id: string;
   message: string;
   read_at: string | null;
+  edited_at: string | null;
+  reply_to: string | null;
   created_at: string;
 }
 
