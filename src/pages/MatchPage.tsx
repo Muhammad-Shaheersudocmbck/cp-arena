@@ -89,15 +89,13 @@ export default function MatchPage() {
     if (!match || match.status !== "active") return;
     
     if (isBotMatch) {
-      // Bot match: no rating changes, just end it
-      await supabase.from("matches").update({
-        status: "finished" as const,
-        winner_id: match.player1_solved_at ? match.player1_id : null,
-        player1_rating_change: 0,
-        player2_rating_change: 0,
-      } as any).eq("id", match.id);
+      // Bot match timeout is handled server-side by the poll action
+      // Just trigger a poll to let the server handle it
+      try {
+        await supabase.functions.invoke("arena-engine", { body: { action: "poll" } });
+      } catch (e) { console.error("Poll failed:", e); }
       refetchMatch();
-      toast.info("Bot match ended - time's up!");
+      toast.info("Match ended - time's up!");
       return;
     }
 
@@ -120,15 +118,30 @@ export default function MatchPage() {
     if (!match || !profile || match.status !== "active") return;
     
     if (isBotMatch) {
-      await supabase.from("matches").update({
-        status: "finished" as const,
-        winner_id: null,
-        resigned_by: profile.id,
-        player1_rating_change: 0,
-        player2_rating_change: 0,
-      } as any).eq("id", match.id);
+      // Bot match resign: bot wins, apply rating loss
+      const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
+      if (p1) {
+        const games = p1.wins + p1.losses + p1.draws;
+        const k = games < 10 ? 48 : games < 30 ? 32 : 24;
+        const botRating = match.problem_rating || 1000;
+        const expected = 1 / (1 + Math.pow(10, (botRating - p1.rating) / 400));
+        const change = Math.round(k * (0 - expected));
+        await supabase.from("matches").update({
+          status: "finished" as const,
+          winner_id: match.player2_id,
+          resigned_by: profile.id,
+          player1_rating_change: change,
+          player2_rating_change: 0,
+        } as any).eq("id", match.id);
+        await supabase.from("profiles").update({
+          rating: p1.rating + change,
+          rank: p1.rating + change < 900 ? "Beginner" : p1.rating + change < 1100 ? "Newbie" : p1.rating + change < 1300 ? "Pupil" : p1.rating + change < 1500 ? "Specialist" : p1.rating + change < 1700 ? "Expert" : p1.rating + change < 1900 ? "Candidate Master" : p1.rating + change < 2100 ? "Master" : "Grandmaster",
+          losses: p1.losses + 1,
+        } as any).eq("id", match.player1_id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["player"] });
       refetchMatch();
-      toast.info("You resigned from the bot match.");
+      toast.info("You resigned. Bot wins!");
       return;
     }
 
@@ -263,11 +276,11 @@ export default function MatchPage() {
   return (
     <div className="container mx-auto max-w-5xl px-4 py-6">
       <div className="mb-6 rounded-2xl border border-border arena-card p-6">
-        {/* Bot match indicator */}
+      {/* Bot match indicator */}
         {isBotMatch && (
           <div className="mb-4 flex items-center justify-center gap-2 rounded-full bg-secondary px-4 py-2 text-sm font-medium text-muted-foreground">
             <Bot className="h-4 w-4" />
-            Practice Match (vs Bot) — No rating changes
+            Bot Match — Rating changes apply!
           </div>
         )}
 
@@ -322,7 +335,13 @@ export default function MatchPage() {
                   <Bot className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <p className="font-display font-semibold text-muted-foreground">ArenaBot</p>
-                <span className="text-xs text-muted-foreground">Practice</span>
+                <RatingBadge rating={match.problem_rating || 1000} size="sm" />
+                {match.player2_solved_at && new Date(match.player2_solved_at) <= new Date() && <span className="rounded-full bg-primary/20 px-3 py-1 text-xs font-mono text-primary">✓ Solved</span>}
+                {match.status === "finished" && match.player1_rating_change != null && (
+                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player1_rating_change > 0 ? "text-primary" : match.player1_rating_change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                    You: {match.player1_rating_change > 0 ? "+" : ""}{match.player1_rating_change}
+                  </span>
+                )}
               </div>
             ) : player2 ? (
               <div className="flex flex-col items-center gap-2">
@@ -385,8 +404,8 @@ export default function MatchPage() {
         )}
       </div>
 
-      {/* Chat - only for participants in non-bot matches */}
-      {isParticipant && !isBotMatch && (
+      {/* Chat - for all participants */}
+      {isParticipant && (
         <div className="rounded-2xl border border-border bg-card">
           <div className="border-b border-border p-4"><h3 className="font-display font-semibold">Match Chat</h3></div>
           <div ref={chatRef} className="h-64 overflow-y-auto p-4">
