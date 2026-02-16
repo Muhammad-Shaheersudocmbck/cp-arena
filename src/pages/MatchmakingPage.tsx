@@ -20,6 +20,7 @@ export default function MatchmakingPage() {
   const queryClient = useQueryClient();
   const [duration, setDuration] = useState(900);
   const [ratingRange, setRatingRange] = useState([800, 1600]);
+  const [queueTags, setQueueTags] = useState<string[]>([]);
   const [showChallengeForm, setShowChallengeForm] = useState(false);
   const [challengeDifficulty, setChallengeDifficulty] = useState([800, 1600]);
   const [challengeTags, setChallengeTags] = useState<string[]>([]);
@@ -79,6 +80,7 @@ export default function MatchmakingPage() {
         rating_min: ratingRange[0],
         rating_max: ratingRange[1],
         duration,
+        tags: queueTags.length > 0 ? queueTags : null,
       });
       if (error) throw error;
     },
@@ -303,6 +305,31 @@ export default function MatchmakingPage() {
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Problem Tags */}
+            <div className="mb-6">
+              <label className="mb-2 flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                <Tag className="h-3 w-3" /> Problem Tags (optional)
+              </label>
+              <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto rounded-lg border border-border bg-secondary/50 p-2">
+                {CF_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setQueueTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag])}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                      queueTags.includes(tag)
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              {queueTags.length > 0 && (
+                <p className="mt-1 text-xs text-primary">{queueTags.length} tag(s) selected</p>
+              )}
             </div>
 
             <button

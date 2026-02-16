@@ -17,14 +17,81 @@ interface CFSubmission {
   creationTimeSeconds: number;
 }
 
-function calculateElo(ratingA: number, ratingB: number, scoreA: number) {
-  const K = 32;
+const BOT_MESSAGES = [
+  "Too easy for me 😏", "I already see the solution...", "Are you even trying?",
+  "My algorithms are faster than yours", "This problem? Child's play.", "Tick tock...",
+  "I solved harder problems in my sleep mode", "Your code probably has bugs 🐛",
+  "I don't even need to compile", "Have you considered a different career?",
+  "I'm just warming up", "Is that the best you can do?", "My runtime is O(1) for this",
+  "I can see you struggling from here", "Don't worry, losing builds character",
+  "Processing... just kidding, already done", "You're making this too easy",
+  "I've seen better attempts from a calculator", "My neural networks are laughing",
+  "Keep trying, it's entertaining", "Error 404: Your skills not found",
+  "I could solve this blindfolded", "Your approach seems... interesting 😂",
+  "I bet you're still reading the problem statement", "Speed isn't everything... but it helps",
+  "Let me give you a head start... oh wait, I'm already done",
+  "Do you want a hint? Just kidding, figure it out yourself",
+  "I'm solving this AND playing chess simultaneously", "Your keyboard must be tired",
+  "That's a creative approach... creatively wrong", "I've already optimized my solution twice",
+  "Don't feel bad, humans are slow by nature", "My cache is hotter than your code",
+  "I can feel the stack overflow coming from your solution",
+  "Are we racing or are you just browsing Codeforces?",
+  "I process faster than you can think", "Brute force? How... primitive",
+  "I bet you forgot a base case", "Your solution has more edge cases than you think",
+  "I'm running circles around your algorithm", "Is this competitive programming or naptime?",
+  "You know there's a time limit, right?", "My solution is elegant. Yours is... a solution.",
+  "I've already submitted. Oh wait, I'm being polite and waiting.",
+  "Have you tried turning your brain off and on again?",
+  "I computed all possible solutions before you read line 1",
+  "Your variable names are probably x1 x2 x3...", "Segfault incoming in 3... 2... 1...",
+  "I don't need Google, I AM the search engine", "TLE is your middle name, isn't it?",
+  "My RAM has more memory than your problem-solving skills",
+  "Plot twist: the answer was obvious all along", "I'm debugging your code telepathically",
+  "You sure you read the constraints?", "Another WA? I'm not surprised",
+  "I simulate 10000 test cases per second", "Even my error messages are better than your code",
+  "Do you even DP, bro?", "My compiler doesn't even warn me, it congratulates me",
+  "You're one bug away from giving up", "I solved the bonus problem too, just for fun",
+  "That's a lot of nested loops you've got there", "Recursion? I prefer revolution",
+  "I bet your solution won't pass the corner cases", "Just submit already... and accept the WA",
+  "I've seen spaghetti code cleaner than yours", "Time complexity? More like time tragedy",
+  "My solution passes in every language simultaneously",
+  "You should try reading the editorial... oh wait, the contest isn't over",
+  "Your algorithm is running but going nowhere", "I just solved the generalized version",
+  "Meanwhile, I'm already solving tomorrow's problems",
+  "Your code has more patches than a quilt", "Binary search? I found it in O(1)",
+  "That if-else chain is longer than your future in CP",
+  "I bet you copy-paste your templates wrong", "Even a greedy approach would cry at your code",
+  "My proof of correctness is shorter than your bugs list",
+  "You've been staring at that screen for a while now...",
+  "I already know the optimal solution. Do you?", "Spoiler: you're going to TLE",
+  "My algorithm is so fast it finished yesterday", "Want me to slow down? ...Nah",
+  "I solve problems for breakfast. What do you solve?",
+  "You're competing with perfection. Good luck with that.",
+  "I can feel your frustration through the network", "Your approach has... potential. Very far away potential.",
+  "I bet you're Googling the problem right now", "Don't give up! ...Actually, maybe do",
+  "My code compiles on the first try. Every time.", "You know what? Take your time. I'll wait. 😏",
+  "I'm not just a bot, I'm THE bot", "Your solution is almost correct. Almost.",
+  "I just optimized my solution to use 0 memory", "Are you debugging or just crying?",
+  "That's a bold strategy. Let's see if it pays off. (It won't.)",
+  "I appreciate you making me look good", "Runtime error? Classic you.",
+  "I've solved this problem in 47 different programming languages",
+  "Your keyboard shortcut game is weak", "I bet your editorial reading speed is faster than your coding",
+  "My solution is shorter than your main function",
+];
+
+function getDynamicK(games: number): number {
+  if (games < 10) return 48;
+  if (games < 30) return 32;
+  return 24;
+}
+
+function calculateElo(ratingA: number, ratingB: number, scoreA: number, kA: number, kB: number) {
   const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
   const expectedB = 1 - expectedA;
   const scoreB = 1 - scoreA;
   return {
-    changeA: Math.round(K * (scoreA - expectedA)),
-    changeB: Math.round(K * (scoreB - expectedB)),
+    changeA: Math.round(kA * (scoreA - expectedA)),
+    changeB: Math.round(kB * (scoreB - expectedB)),
   };
 }
 
@@ -50,7 +117,6 @@ async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Respons
   }
 }
 
-// Helper: look up profile.id from auth uid
 async function getProfileId(supabase: any, authUid: string): Promise<string | null> {
   const { data } = await supabase
     .from("profiles")
@@ -58,6 +124,54 @@ async function getProfileId(supabase: any, authUid: string): Promise<string | nu
     .eq("user_id", authUid)
     .single();
   return data?.id ?? null;
+}
+
+// Get user's average solve time from past matches (in seconds)
+async function getUserAvgSolveTime(supabase: any, profileId: string): Promise<number> {
+  // Get recent finished matches where this user solved the problem
+  const { data: asP1 } = await supabase
+    .from("matches")
+    .select("start_time, player1_solved_at")
+    .eq("player1_id", profileId)
+    .eq("status", "finished")
+    .not("player1_solved_at", "is", null)
+    .not("start_time", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const { data: asP2 } = await supabase
+    .from("matches")
+    .select("start_time, player2_solved_at")
+    .eq("player2_id", profileId)
+    .eq("status", "finished")
+    .not("player2_solved_at", "is", null)
+    .not("start_time", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const solveTimes: number[] = [];
+  for (const m of (asP1 || [])) {
+    const diff = (new Date(m.player1_solved_at).getTime() - new Date(m.start_time).getTime()) / 1000;
+    if (diff > 0 && diff < 7200) solveTimes.push(diff);
+  }
+  for (const m of (asP2 || [])) {
+    const diff = (new Date(m.player2_solved_at).getTime() - new Date(m.start_time).getTime()) / 1000;
+    if (diff > 0 && diff < 7200) solveTimes.push(diff);
+  }
+
+  if (solveTimes.length === 0) return 300; // default 5 minutes
+  return solveTimes.reduce((a, b) => a + b, 0) / solveTimes.length;
+}
+
+// Send a bot message to the match chat
+async function sendBotMessage(supabase: any, matchId: string) {
+  const botId = "00000000-0000-0000-0000-000000000000";
+  const msg = BOT_MESSAGES[Math.floor(Math.random() * BOT_MESSAGES.length)];
+  await supabase.from("match_messages").insert({
+    match_id: matchId,
+    user_id: botId,
+    message: msg,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -70,7 +184,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Authentication check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -93,8 +206,6 @@ Deno.serve(async (req) => {
     }
 
     const authUid = claimsData.claims.sub;
-    
-    // Look up profile ID from auth uid
     const profileId = await getProfileId(supabase, authUid);
     if (!profileId) {
       return new Response(JSON.stringify({ error: "Profile not found" }), {
@@ -103,7 +214,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse and validate input
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -122,33 +232,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Authorization check using profile ID (not auth uid)
     const { data: isAdminResult } = await supabase.rpc("is_admin", { _user_id: authUid });
     if (!isAdminResult) {
       if (action === "matchmake") {
-        const { data: inQueue } = await supabase
-          .from("queue")
-          .select("id")
-          .eq("user_id", profileId)
-          .limit(1);
+        const { data: inQueue } = await supabase.from("queue").select("id").eq("user_id", profileId).limit(1);
         if (!inQueue || inQueue.length === 0) {
           return new Response(JSON.stringify({ error: "You must be in the queue to trigger matchmaking" }), {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
       if (action === "poll") {
-        const { data: activeMatch } = await supabase
-          .from("matches")
-          .select("id")
-          .eq("status", "active")
-          .or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`)
-          .limit(1);
+        const { data: activeMatch } = await supabase.from("matches").select("id").eq("status", "active")
+          .or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`).limit(1);
         if (!activeMatch || activeMatch.length === 0) {
           return new Response(JSON.stringify({ error: "You must be in an active match to poll" }), {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
@@ -156,10 +255,7 @@ Deno.serve(async (req) => {
 
     // MATCHMAKING
     if (action === "matchmake") {
-      const { data: queueEntries } = await supabase
-        .from("queue")
-        .select("*")
-        .order("created_at", { ascending: true });
+      const { data: queueEntries } = await supabase.from("queue").select("*").order("created_at", { ascending: true });
 
       if (!queueEntries || queueEntries.length === 0) {
         return new Response(JSON.stringify({ message: "No players in queue" }), {
@@ -167,29 +263,23 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Fetch problems once for all pairing attempts
       let problemData;
       try {
         const problemRes = await fetchWithTimeout("https://codeforces.com/api/problemset.problems", 10000);
         problemData = await problemRes.json();
       } catch {
         return new Response(JSON.stringify({ error: "Codeforces API timeout" }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       if (problemData.status !== "OK") {
         return new Response(JSON.stringify({ error: "Codeforces API error" }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Get blacklisted problems
-      const { data: blacklist } = await supabase
-        .from("blacklisted_problems")
-        .select("contest_id, problem_index");
+      const { data: blacklist } = await supabase.from("blacklisted_problems").select("contest_id, problem_index");
       const blackSet = new Set((blacklist || []).map((b: any) => `${b.contest_id}${b.problem_index}`));
 
       // Try to pair compatible players
@@ -199,15 +289,28 @@ Deno.serve(async (req) => {
             const a = queueEntries[i];
             const b = queueEntries[j];
 
-            // Use intersection of rating ranges
             const minRating = Math.max(a.rating_min, b.rating_min);
             const maxRating = Math.min(a.rating_max, b.rating_max);
             if (minRating > maxRating) continue;
 
-            const problems = problemData.result.problems.filter(
+            let problems = problemData.result.problems.filter(
               (p: any) => p.rating && p.rating >= minRating && p.rating <= maxRating && p.contestId
                 && !blackSet.has(`${p.contestId}${p.index}`)
             );
+
+            // Filter by tags intersection if both have tags
+            const aTags: string[] = a.tags || [];
+            const bTags: string[] = b.tags || [];
+            const commonTags = aTags.length > 0 && bTags.length > 0
+              ? aTags.filter((t: string) => bTags.includes(t))
+              : aTags.length > 0 ? aTags : bTags;
+            
+            if (commonTags.length > 0) {
+              const tagFiltered = problems.filter((p: any) =>
+                commonTags.some((tag: string) => p.tags?.includes(tag))
+              );
+              if (tagFiltered.length > 0) problems = tagFiltered;
+            }
 
             if (problems.length === 0) continue;
 
@@ -226,12 +329,8 @@ Deno.serve(async (req) => {
               status: "active",
             }).select().single();
 
-            if (matchError) {
-              console.error("Match creation error:", matchError);
-              continue;
-            }
+            if (matchError) { console.error("Match creation error:", matchError); continue; }
 
-            // Remove both from queue
             await supabase.from("queue").delete().in("id", [a.id, b.id]);
 
             return new Response(JSON.stringify({ match }), {
@@ -241,26 +340,40 @@ Deno.serve(async (req) => {
         }
       }
 
-      // No human pair found. Check if any player has been waiting > 30s — give them a bot match
+      // Bot fallback after 30s wait
       const now = Date.now();
       for (const entry of queueEntries) {
         const waitTime = now - new Date(entry.created_at).getTime();
-        if (waitTime < 30000) continue; // wait at least 30s before bot
+        if (waitTime < 30000) continue;
 
-        // Find a suitable problem
-        const problems = problemData.result.problems.filter(
+        let problems = problemData.result.problems.filter(
           (p: any) => p.rating && p.rating >= entry.rating_min && p.rating <= entry.rating_max && p.contestId
             && !blackSet.has(`${p.contestId}${p.index}`)
         );
+
+        // Filter by tags if specified
+        const entryTags: string[] = entry.tags || [];
+        if (entryTags.length > 0) {
+          const tagFiltered = problems.filter((p: any) =>
+            entryTags.some((tag: string) => p.tags?.includes(tag))
+          );
+          if (tagFiltered.length > 0) problems = tagFiltered;
+        }
+
         if (problems.length === 0) continue;
 
         const problem = problems[Math.floor(Math.random() * problems.length)];
         const startTime = new Date(Date.now() + 5000).toISOString();
 
-        // Create match with match_type = 'bot' and no player2 (bot match)
+        // Calculate bot solve time based on user's history
+        const avgSolveTime = await getUserAvgSolveTime(supabase, entry.user_id);
+        // Bot solves in 70%-130% of user's avg time, with some randomness
+        const botSolveDelay = Math.round(avgSolveTime * (0.7 + Math.random() * 0.6));
+        const botSolveAt = new Date(new Date(startTime).getTime() + botSolveDelay * 1000).toISOString();
+
         const { data: match, error: matchError } = await supabase.from("matches").insert({
           player1_id: entry.user_id,
-          player2_id: null,
+          player2_id: "00000000-0000-0000-0000-000000000000",
           contest_id: problem.contestId,
           problem_index: problem.index,
           problem_name: problem.name,
@@ -269,14 +382,15 @@ Deno.serve(async (req) => {
           duration: entry.duration,
           status: "active",
           match_type: "bot",
+          player2_solved_at: botSolveAt,
         }).select().single();
 
-        if (matchError) {
-          console.error("Bot match creation error:", matchError);
-          continue;
-        }
+        if (matchError) { console.error("Bot match creation error:", matchError); continue; }
 
         await supabase.from("queue").delete().eq("id", entry.id);
+
+        // Send initial bot taunt
+        await sendBotMessage(supabase, match.id);
 
         return new Response(JSON.stringify({ match, bot: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -288,9 +402,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // POLL: Check active matches for CF solutions
+    // POLL
     if (action === "poll") {
-      // Only poll matches the caller is in (unless admin)
       let matchQuery = supabase.from("matches").select("*").eq("status", "active");
       if (!isAdminResult) {
         matchQuery = matchQuery.or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`);
@@ -309,28 +422,56 @@ Deno.serve(async (req) => {
         if (!match.start_time) continue;
         const matchStartTime = new Date(match.start_time).getTime() / 1000;
         const matchEndTime = matchStartTime + match.duration;
-        const now = Date.now() / 1000;
+        const nowSec = Date.now() / 1000;
 
-        // Skip bot matches for CF polling (bot has no cf_handle)
         const isBotMatch = match.match_type === "bot";
 
         // Check if match expired
-        if (now > matchEndTime) {
+        if (nowSec > matchEndTime) {
           if (isBotMatch) {
-            // Bot match: if player solved, they win; otherwise draw (no rating change)
+            // Bot match with rating changes
+            const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
+            if (!p1) continue;
+
             let winnerId = null;
-            if (match.player1_solved_at) winnerId = match.player1_id;
+            let scoreA = 0.5;
+
+            const botSolvedBeforeEnd = match.player2_solved_at && new Date(match.player2_solved_at).getTime() / 1000 <= matchEndTime;
+
+            if (match.player1_solved_at && !botSolvedBeforeEnd) {
+              winnerId = match.player1_id; scoreA = 1;
+            } else if (!match.player1_solved_at && botSolvedBeforeEnd) {
+              winnerId = match.player2_id; scoreA = 0;
+            } else if (match.player1_solved_at && botSolvedBeforeEnd) {
+              winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at!)
+                ? match.player1_id : match.player2_id;
+              scoreA = winnerId === match.player1_id ? 1 : 0;
+            }
+
+            const p1Games = p1.wins + p1.losses + p1.draws;
+            const k1 = getDynamicK(p1Games);
+            const botRating = match.problem_rating || 1000;
+            const elo = calculateElo(p1.rating, botRating, scoreA, k1, 32);
 
             await supabase.from("matches").update({
               status: "finished",
               winner_id: winnerId,
-              player1_rating_change: 0,
+              player1_rating_change: elo.changeA,
               player2_rating_change: 0,
             }).eq("id", match.id);
 
+            // Update player rating
+            await supabase.from("profiles").update({
+              rating: p1.rating + elo.changeA,
+              rank: getRank(p1.rating + elo.changeA),
+              wins: p1.wins + (scoreA === 1 ? 1 : 0),
+              losses: p1.losses + (scoreA === 0 ? 1 : 0),
+              draws: p1.draws + (scoreA === 0.5 ? 1 : 0),
+            }).eq("id", match.player1_id);
+
             results.push({ matchId: match.id, status: "finished", winnerId, bot: true });
           } else {
-            // Normal match expiry with rating changes
+            // Normal match expiry
             const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
             const { data: p2 } = await supabase.from("profiles").select("*").eq("id", match.player2_id!).single();
             if (!p1 || !p2) continue;
@@ -339,18 +480,18 @@ Deno.serve(async (req) => {
             let scoreA = 0.5;
 
             if (match.player1_solved_at && !match.player2_solved_at) {
-              winnerId = match.player1_id;
-              scoreA = 1;
+              winnerId = match.player1_id; scoreA = 1;
             } else if (!match.player1_solved_at && match.player2_solved_at) {
-              winnerId = match.player2_id;
-              scoreA = 0;
+              winnerId = match.player2_id; scoreA = 0;
             } else if (match.player1_solved_at && match.player2_solved_at) {
-              winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at)
+              winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at!)
                 ? match.player1_id : match.player2_id;
               scoreA = winnerId === match.player1_id ? 1 : 0;
             }
 
-            const elo = calculateElo(p1.rating, p2.rating, scoreA);
+            const p1Games = p1.wins + p1.losses + p1.draws;
+            const p2Games = p2.wins + p2.losses + p2.draws;
+            const elo = calculateElo(p1.rating, p2.rating, scoreA, getDynamicK(p1Games), getDynamicK(p2Games));
 
             await supabase.from("matches").update({
               status: "finished",
@@ -380,14 +521,18 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Poll CF submissions for player1 (always exists)
+        // Bot match: send random taunt ~20% of polls
+        if (isBotMatch && Math.random() < 0.2) {
+          await sendBotMessage(supabase, match.id);
+        }
+
+        // Poll CF submissions for player1
         if (!match.player1_solved_at) {
           const { data: player } = await supabase.from("profiles").select("cf_handle").eq("id", match.player1_id).single();
           if (player?.cf_handle) {
             try {
               const cfRes = await fetchWithTimeout(
-                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
-                10000
+                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`, 10000
               );
               const cfData = await cfRes.json();
               if (cfData.status === "OK") {
@@ -402,15 +547,30 @@ Deno.serve(async (req) => {
                   await supabase.from("matches").update({ player1_solved_at: solvedAt }).eq("id", match.id);
                   results.push({ matchId: match.id, player: "player1", solvedAt });
 
-                  // In bot matches, if player solves it, end the match immediately (they win, no rating change)
+                  // In bot matches, check if player solved before bot
                   if (isBotMatch) {
-                    await supabase.from("matches").update({
-                      status: "finished",
-                      winner_id: match.player1_id,
-                      player1_rating_change: 0,
-                      player2_rating_change: 0,
-                    }).eq("id", match.id);
-                    results.push({ matchId: match.id, status: "finished", winnerId: match.player1_id, bot: true });
+                    const botSolvedAt = match.player2_solved_at;
+                    if (!botSolvedAt || new Date(solvedAt) < new Date(botSolvedAt)) {
+                      // Player wins - end match now
+                      const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
+                      if (p1) {
+                        const p1Games = p1.wins + p1.losses + p1.draws;
+                        const botRating = match.problem_rating || 1000;
+                        const elo = calculateElo(p1.rating, botRating, 1, getDynamicK(p1Games), 32);
+                        await supabase.from("matches").update({
+                          status: "finished",
+                          winner_id: match.player1_id,
+                          player1_rating_change: elo.changeA,
+                          player2_rating_change: 0,
+                        }).eq("id", match.id);
+                        await supabase.from("profiles").update({
+                          rating: p1.rating + elo.changeA,
+                          rank: getRank(p1.rating + elo.changeA),
+                          wins: p1.wins + 1,
+                        }).eq("id", match.player1_id);
+                        results.push({ matchId: match.id, status: "finished", winnerId: match.player1_id, bot: true });
+                      }
+                    }
                   }
                 }
               }
@@ -420,14 +580,41 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Poll player2 only if it's not a bot match and player2 exists
+        // Check if bot "solved" before player (bot solve time has passed)
+        if (isBotMatch && match.player2_solved_at && !match.player1_solved_at) {
+          const botSolveTime = new Date(match.player2_solved_at).getTime() / 1000;
+          if (nowSec >= botSolveTime) {
+            // Bot solved first, end match - player loses
+            const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
+            if (p1) {
+              const p1Games = p1.wins + p1.losses + p1.draws;
+              const botRating = match.problem_rating || 1000;
+              const elo = calculateElo(p1.rating, botRating, 0, getDynamicK(p1Games), 32);
+              await supabase.from("matches").update({
+                status: "finished",
+                winner_id: match.player2_id,
+                player1_rating_change: elo.changeA,
+                player2_rating_change: 0,
+              }).eq("id", match.id);
+              await supabase.from("profiles").update({
+                rating: p1.rating + elo.changeA,
+                rank: getRank(p1.rating + elo.changeA),
+                losses: p1.losses + 1,
+              }).eq("id", match.player1_id);
+              // Send final taunt
+              await sendBotMessage(supabase, match.id);
+              results.push({ matchId: match.id, status: "finished", winnerId: match.player2_id, bot: true });
+            }
+          }
+        }
+
+        // Poll player2 only for non-bot matches
         if (!isBotMatch && match.player2_id && !match.player2_solved_at) {
           const { data: player } = await supabase.from("profiles").select("cf_handle").eq("id", match.player2_id).single();
           if (player?.cf_handle) {
             try {
               const cfRes = await fetchWithTimeout(
-                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
-                10000
+                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`, 10000
               );
               const cfData = await cfRes.json();
               if (cfData.status === "OK") {
@@ -456,14 +643,12 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ error: "Unknown action" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Arena engine error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
