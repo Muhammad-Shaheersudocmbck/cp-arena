@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as LinkIcon, Check, Loader2, Trophy, Swords, BarChart3, Pencil, UserPlus, MessageSquare, Camera } from "lucide-react";
+import RatingGraph from "@/components/RatingGraph";
 import { Link } from "react-router-dom";
 import RatingBadge from "@/components/RatingBadge";
 import { getRankFromRating, getRankColor, SAFE_PROFILE_COLUMNS } from "@/lib/types";
@@ -37,7 +38,7 @@ export default function ProfilePage() {
     queryKey: ["match-history", id],
     enabled: !!id,
     queryFn: async () => {
-      const { data } = await supabase.from("matches").select("*").or(`player1_id.eq.${id},player2_id.eq.${id}`).eq("status", "finished").order("created_at", { ascending: false }).limit(20);
+      const { data } = await supabase.from("matches").select("*").or(`player1_id.eq.${id},player2_id.eq.${id}`).eq("status", "finished").order("created_at", { ascending: false }).limit(200);
       return (data || []) as Match[];
     },
   });
@@ -267,6 +268,13 @@ export default function ProfilePage() {
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Rating Graph */}
+      {matchHistory && (
+        <div className="mb-6">
+          <RatingGraph matches={matchHistory} profileId={profile.id} currentRating={profile.rating} />
         </div>
       )}
 
