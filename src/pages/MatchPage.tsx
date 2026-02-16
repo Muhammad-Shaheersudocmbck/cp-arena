@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
-import { ExternalLink, Send, Clock, Trophy, Flag, Handshake, ShieldAlert } from "lucide-react";
+import { ExternalLink, Send, Clock, Trophy, Flag, Handshake, ShieldAlert, Bot } from "lucide-react";
 import { toast } from "sonner";
 import RatingBadge from "@/components/RatingBadge";
 import type { Profile, Match, MatchMessage } from "@/lib/types";
@@ -28,6 +28,8 @@ export default function MatchPage() {
     },
   });
 
+  const isBotMatch = match?.match_type === "bot";
+
   const { data: player1 } = useQuery({
     queryKey: ["player", match?.player1_id],
     enabled: !!match?.player1_id,
@@ -39,12 +41,33 @@ export default function MatchPage() {
 
   const { data: player2 } = useQuery({
     queryKey: ["player", match?.player2_id],
-    enabled: !!match?.player2_id,
+    enabled: !!match?.player2_id && !isBotMatch,
     queryFn: async () => {
       const { data } = await supabase.from("profiles").select(SAFE_PROFILE_COLUMNS).eq("id", match!.player2_id!).single();
       return data as Profile;
     },
   });
+
+  // Poll arena-engine for CF submission detection every 20 seconds
+  useEffect(() => {
+    if (!match || match.status !== "active" || !profile) return;
+    
+    const pollSubmissions = async () => {
+      try {
+        await supabase.functions.invoke("arena-engine", {
+          body: { action: "poll" },
+        });
+        refetchMatch();
+      } catch (e) {
+        console.error("Poll failed:", e);
+      }
+    };
+
+    // Poll immediately, then every 20s
+    pollSubmissions();
+    const interval = setInterval(pollSubmissions, 20000);
+    return () => clearInterval(interval);
+  }, [match?.id, match?.status, profile?.id]);
 
   // Timer + auto-end
   useEffect(() => {
@@ -64,6 +87,20 @@ export default function MatchPage() {
 
   const endMatchOnTimeout = async () => {
     if (!match || match.status !== "active") return;
+    
+    if (isBotMatch) {
+      // Bot match: no rating changes, just end it
+      await supabase.from("matches").update({
+        status: "finished" as const,
+        winner_id: match.player1_solved_at ? match.player1_id : null,
+        player1_rating_change: 0,
+        player2_rating_change: 0,
+      } as any).eq("id", match.id);
+      refetchMatch();
+      toast.info("Bot match ended - time's up!");
+      return;
+    }
+
     let winnerId: string | null = null;
     if (match.player1_solved_at && !match.player2_solved_at) winnerId = match.player1_id;
     else if (!match.player1_solved_at && match.player2_solved_at) winnerId = match.player2_id;
@@ -81,6 +118,20 @@ export default function MatchPage() {
 
   const resign = async () => {
     if (!match || !profile || match.status !== "active") return;
+    
+    if (isBotMatch) {
+      await supabase.from("matches").update({
+        status: "finished" as const,
+        winner_id: null,
+        resigned_by: profile.id,
+        player1_rating_change: 0,
+        player2_rating_change: 0,
+      } as any).eq("id", match.id);
+      refetchMatch();
+      toast.info("You resigned from the bot match.");
+      return;
+    }
+
     const winnerId = match.player1_id === profile.id ? match.player2_id : match.player1_id;
 
     const { error } = await supabase.rpc("finalize_match", {
@@ -96,7 +147,7 @@ export default function MatchPage() {
   };
 
   const offerDraw = async () => {
-    if (!match || !profile) return;
+    if (!match || !profile || isBotMatch) return;
     const drawOfferedBy = (match as any).draw_offered_by;
 
     if (drawOfferedBy && drawOfferedBy !== profile.id) {
@@ -193,7 +244,7 @@ export default function MatchPage() {
   const isParticipant = profile && match && (match.player1_id === profile.id || match.player2_id === profile.id);
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
-  const bothJoined = match?.player2_id != null;
+  const bothJoined = isBotMatch || match?.player2_id != null;
   const problemUrl = bothJoined && match?.contest_id && match?.problem_index
     ? `https://codeforces.com/problemset/problem/${match.contest_id}/${match.problem_index}`
     : null;
@@ -212,6 +263,14 @@ export default function MatchPage() {
   return (
     <div className="container mx-auto max-w-5xl px-4 py-6">
       <div className="mb-6 rounded-2xl border border-border arena-card p-6">
+        {/* Bot match indicator */}
+        {isBotMatch && (
+          <div className="mb-4 flex items-center justify-center gap-2 rounded-full bg-secondary px-4 py-2 text-sm font-medium text-muted-foreground">
+            <Bot className="h-4 w-4" />
+            Practice Match (vs Bot) — No rating changes
+          </div>
+        )}
+
         {/* Timer */}
         <div className="mb-4 text-center">
           {match.status === "active" ? (
@@ -223,7 +282,9 @@ export default function MatchPage() {
             <div className="space-y-2 text-center">
               <div className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-2 text-sm font-medium">
                 <Trophy className="h-4 w-4 text-neon-orange" />
-                {match.winner_id ? `Winner: ${match.winner_id === player1?.id ? player1?.username : player2?.username}` : "Draw!"}
+                {match.winner_id
+                  ? `Winner: ${match.winner_id === player1?.id ? player1?.username : (isBotMatch ? "You" : player2?.username)}`
+                  : "Draw!"}
               </div>
               {(match as any).resigned_by && (
                 <p className="text-xs text-muted-foreground">
@@ -246,7 +307,7 @@ export default function MatchPage() {
                 <RatingBadge rating={player1.rating} size="sm" />
                 {match.player1_solved_at && <span className="rounded-full bg-primary/20 px-3 py-1 text-xs font-mono text-primary">✓ Solved</span>}
                 {match.status === "finished" && match.player1_rating_change != null && (
-                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player1_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
+                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player1_rating_change > 0 ? "text-primary" : match.player1_rating_change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                     {match.player1_rating_change > 0 ? "+" : ""}{match.player1_rating_change}
                   </span>
                 )}
@@ -255,14 +316,22 @@ export default function MatchPage() {
           </div>
           <div className="flex flex-col items-center"><span className="font-display text-2xl font-bold text-muted-foreground">VS</span></div>
           <div className="flex-1 text-center">
-            {player2 ? (
+            {isBotMatch ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+                  <Bot className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="font-display font-semibold text-muted-foreground">ArenaBot</p>
+                <span className="text-xs text-muted-foreground">Practice</span>
+              </div>
+            ) : player2 ? (
               <div className="flex flex-col items-center gap-2">
                 <img src={player2.avatar || ""} alt="" className="h-16 w-16 rounded-full" />
                 <p className="font-display font-semibold">{player2.username}</p>
                 <RatingBadge rating={player2.rating} size="sm" />
                 {match.player2_solved_at && <span className="rounded-full bg-primary/20 px-3 py-1 text-xs font-mono text-primary">✓ Solved</span>}
                 {match.status === "finished" && match.player2_rating_change != null && (
-                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player2_rating_change > 0 ? "text-primary" : "text-destructive"}`}>
+                  <span className={`animate-rating-pop font-mono text-sm font-bold ${match.player2_rating_change > 0 ? "text-primary" : match.player2_rating_change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                     {match.player2_rating_change > 0 ? "+" : ""}{match.player2_rating_change}
                   </span>
                 )}
@@ -295,12 +364,14 @@ export default function MatchPage() {
             <button onClick={resign} className="inline-flex items-center gap-2 rounded-xl border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10">
               <Flag className="h-4 w-4" /> Resign
             </button>
-            <button onClick={offerDraw} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
-              drawOfferedToMe ? "border-neon-orange bg-neon-orange/10 text-neon-orange animate-pulse" : "border-muted-foreground/30 text-muted-foreground hover:bg-secondary"
-            }`}>
-              <Handshake className="h-4 w-4" />
-              {drawOfferedToMe ? "Accept Draw" : drawOfferedBy === profile?.id ? "Draw Offered..." : "Offer Draw"}
-            </button>
+            {!isBotMatch && (
+              <button onClick={offerDraw} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                drawOfferedToMe ? "border-neon-orange bg-neon-orange/10 text-neon-orange animate-pulse" : "border-muted-foreground/30 text-muted-foreground hover:bg-secondary"
+              }`}>
+                <Handshake className="h-4 w-4" />
+                {drawOfferedToMe ? "Accept Draw" : drawOfferedBy === profile?.id ? "Draw Offered..." : "Offer Draw"}
+              </button>
+            )}
           </div>
         )}
 
@@ -314,8 +385,8 @@ export default function MatchPage() {
         )}
       </div>
 
-      {/* Chat - only for participants */}
-      {isParticipant && (
+      {/* Chat - only for participants in non-bot matches */}
+      {isParticipant && !isBotMatch && (
         <div className="rounded-2xl border border-border bg-card">
           <div className="border-b border-border p-4"><h3 className="font-display font-semibold">Match Chat</h3></div>
           <div ref={chatRef} className="h-64 overflow-y-auto p-4">

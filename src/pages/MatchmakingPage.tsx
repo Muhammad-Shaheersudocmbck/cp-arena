@@ -56,11 +56,13 @@ export default function MatchmakingPage() {
         console.error("Matchmake poll failed:", e);
       }
 
+      // Check for active matches (including bot matches where player2 is null)
       const { data } = await supabase
         .from("matches")
         .select("*")
         .eq("status", "active")
         .or(`player1_id.eq.${profile!.id},player2_id.eq.${profile!.id}`)
+        .limit(1)
         .maybeSingle();
       if (data) {
         navigate(`/match/${data.id}`);
