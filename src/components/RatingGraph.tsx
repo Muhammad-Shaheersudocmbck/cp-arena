@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 
 interface RatingGraphProps {
@@ -24,14 +25,14 @@ interface RatingGraphProps {
 }
 
 const RANK_BANDS = [
-  { min: 0, max: 900, label: "Beginner", color: "hsla(0, 0%, 50%, 0.08)" },
-  { min: 900, max: 1100, label: "Newbie", color: "hsla(0, 0%, 60%, 0.08)" },
-  { min: 1100, max: 1300, label: "Pupil", color: "hsla(142, 100%, 50%, 0.08)" },
-  { min: 1300, max: 1500, label: "Specialist", color: "hsla(185, 100%, 50%, 0.08)" },
-  { min: 1500, max: 1700, label: "Expert", color: "hsla(270, 100%, 60%, 0.08)" },
-  { min: 1700, max: 1900, label: "Candidate Master", color: "hsla(30, 100%, 50%, 0.08)" },
-  { min: 1900, max: 2100, label: "Master", color: "hsla(30, 100%, 50%, 0.12)" },
-  { min: 2100, max: 3000, label: "Grandmaster", color: "hsla(0, 100%, 50%, 0.12)" },
+  { min: 0, max: 900, label: "Beginner", color: "hsla(0, 0%, 50%, 0.06)" },
+  { min: 900, max: 1100, label: "Newbie", color: "hsla(0, 0%, 60%, 0.06)" },
+  { min: 1100, max: 1300, label: "Pupil", color: "hsla(142, 100%, 50%, 0.06)" },
+  { min: 1300, max: 1500, label: "Specialist", color: "hsla(185, 100%, 50%, 0.06)" },
+  { min: 1500, max: 1700, label: "Expert", color: "hsla(270, 100%, 60%, 0.06)" },
+  { min: 1700, max: 1900, label: "Candidate Master", color: "hsla(30, 100%, 50%, 0.06)" },
+  { min: 1900, max: 2100, label: "Master", color: "hsla(30, 100%, 50%, 0.1)" },
+  { min: 2100, max: 3000, label: "Grandmaster", color: "hsla(0, 100%, 50%, 0.1)" },
 ];
 
 const RANK_LINES = [
@@ -51,8 +52,8 @@ function CustomTooltip({ active, payload }: any) {
     <div className="rounded-lg border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur-sm">
       <p className="text-xs text-muted-foreground">{data.date}</p>
       <p className="font-mono text-sm font-bold text-primary">{data.rating}</p>
-      {data.change !== undefined && data.change !== null && (
-        <p className={`font-mono text-xs font-semibold ${data.change > 0 ? "text-primary" : data.change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+      {data.change !== undefined && data.change !== null && data.change !== 0 && (
+        <p className={`font-mono text-xs font-semibold ${data.change > 0 ? "text-primary" : "text-destructive"}`}>
           {data.change > 0 ? "+" : ""}{data.change}
         </p>
       )}
@@ -62,14 +63,14 @@ function CustomTooltip({ active, payload }: any) {
 
 export default function RatingGraph({ matches, profileId, currentRating }: RatingGraphProps) {
   const data = useMemo(() => {
-    // Sort matches oldest first
+    // Sort matches oldest first, filter out +0 rating changes
     const sorted = [...matches]
       .filter((m) => {
         const isP1 = m.player1_id === profileId;
         const isP2 = m.player2_id === profileId;
         if (!isP1 && !isP2) return false;
         const change = isP1 ? m.player1_rating_change : m.player2_rating_change;
-        return change !== null && change !== undefined;
+        return change !== null && change !== undefined && change !== 0;
       })
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -115,8 +116,9 @@ export default function RatingGraph({ matches, profileId, currentRating }: Ratin
   const yMin = Math.max(0, Math.floor((minRating - padding) / 100) * 100);
   const yMax = Math.ceil((maxRating + padding) / 100) * 100;
 
-  // Determine visible rank lines
+  // Determine visible rank lines & bands
   const visibleRankLines = RANK_LINES.filter((r) => r.value >= yMin && r.value <= yMax);
+  const visibleBands = RANK_BANDS.filter((b) => b.max > yMin && b.min < yMax);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
@@ -152,6 +154,17 @@ export default function RatingGraph({ matches, profileId, currentRating }: Ratin
             tickLine={false}
           />
           <Tooltip content={<CustomTooltip />} />
+          {/* Colored rank area bands */}
+          {visibleBands.map((band) => (
+            <ReferenceArea
+              key={band.label}
+              y1={Math.max(band.min, yMin)}
+              y2={Math.min(band.max, yMax)}
+              fill={band.color}
+              fillOpacity={1}
+              ifOverflow="hidden"
+            />
+          ))}
           {visibleRankLines.map((line) => (
             <ReferenceLine
               key={line.value}

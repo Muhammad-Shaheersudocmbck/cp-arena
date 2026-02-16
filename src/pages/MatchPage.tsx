@@ -128,7 +128,7 @@ export default function MatchPage() {
         const change = Math.round(k * (0 - expected));
         await supabase.from("matches").update({
           status: "finished" as const,
-          winner_id: match.player2_id,
+          winner_id: null, // bot won
           resigned_by: profile.id,
           player1_rating_change: change,
           player2_rating_change: 0,
@@ -254,7 +254,7 @@ export default function MatchPage() {
     setMessage("");
   };
 
-  const isParticipant = profile && match && (match.player1_id === profile.id || match.player2_id === profile.id);
+  const isParticipant = profile && match && (match.player1_id === profile.id || match.player2_id === profile.id || isBotMatch);
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   const bothJoined = isBotMatch || match?.player2_id != null;
@@ -295,9 +295,11 @@ export default function MatchPage() {
             <div className="space-y-2 text-center">
               <div className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-2 text-sm font-medium">
                 <Trophy className="h-4 w-4 text-neon-orange" />
-                {match.winner_id
-                  ? `Winner: ${match.winner_id === player1?.id ? player1?.username : (isBotMatch ? "You" : player2?.username)}`
-                  : "Draw!"}
+                {isBotMatch
+                  ? (match.winner_id === player1?.id ? `Winner: ${player1?.username}` : (match.player1_rating_change != null && match.player1_rating_change < 0 ? "Bot Wins!" : "Draw!"))
+                  : match.winner_id
+                    ? `Winner: ${match.winner_id === player1?.id ? player1?.username : player2?.username}`
+                    : "Draw!"}
               </div>
               {(match as any).resigned_by && (
                 <p className="text-xs text-muted-foreground">
@@ -413,15 +415,23 @@ export default function MatchPage() {
               <p className="text-center text-sm text-muted-foreground">No messages yet</p>
             ) : (
               <div className="space-y-3">
-                {messages.map((msg) => (
-                  <div key={msg.id} className="flex items-start gap-2">
-                    <img src={msg.profile?.avatar || ""} alt="" className="h-6 w-6 rounded-full" />
-                    <div>
-                      <span className="text-xs font-semibold text-primary">{msg.profile?.username || "User"}</span>
-                      <p className="text-sm text-foreground">{msg.message}</p>
+                {messages.map((msg) => {
+                  const isBotMsg = msg.message.startsWith("[BOT] ");
+                  const displayMsg = isBotMsg ? msg.message.replace("[BOT] ", "") : msg.message;
+                  return (
+                    <div key={msg.id} className="flex items-start gap-2">
+                      {isBotMsg ? (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary"><Bot className="h-3 w-3 text-muted-foreground" /></div>
+                      ) : (
+                        <img src={msg.profile?.avatar || ""} alt="" className="h-6 w-6 rounded-full" />
+                      )}
+                      <div>
+                        <span className={`text-xs font-semibold ${isBotMsg ? "text-muted-foreground" : "text-primary"}`}>{isBotMsg ? "ArenaBot" : (msg.profile?.username || "User")}</span>
+                        <p className="text-sm text-foreground">{displayMsg}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
