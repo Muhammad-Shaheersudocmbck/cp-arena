@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const VALID_ACTIONS = ["matchmake", "poll"] as const;
-type ValidAction = typeof VALID_ACTIONS[number];
+type ValidAction = (typeof VALID_ACTIONS)[number];
 
 interface CFSubmission {
   id: number;
@@ -39,7 +39,6 @@ function getRank(rating: number): string {
   return "Grandmaster";
 }
 
-// Simple fetch with timeout
 async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -49,6 +48,16 @@ async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Respons
   } finally {
     clearTimeout(id);
   }
+}
+
+// Helper: look up profile.id from auth uid
+async function getProfileId(supabase: any, authUid: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("user_id", authUid)
+    .single();
+  return data?.id ?? null;
 }
 
 Deno.serve(async (req) => {
@@ -83,7 +92,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const userId = claimsData.claims.sub;
+    const authUid = claimsData.claims.sub;
+    
+    // Look up profile ID from auth uid
+    const profileId = await getProfileId(supabase, authUid);
+    if (!profileId) {
+      return new Response(JSON.stringify({ error: "Profile not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Parse and validate input
     let body: Record<string, unknown>;
@@ -104,15 +122,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Authorization: verify caller is an admin for system-level operations
-    const { data: isAdminResult } = await supabase.rpc("is_admin", { _user_id: userId });
+    // Authorization check using profile ID (not auth uid)
+    const { data: isAdminResult } = await supabase.rpc("is_admin", { _user_id: authUid });
     if (!isAdminResult) {
-      // For non-admins, only allow if they are in the queue (matchmake) or a match participant (poll)
       if (action === "matchmake") {
         const { data: inQueue } = await supabase
           .from("queue")
           .select("id")
-          .eq("user_id", userId)
+          .eq("user_id", profileId)
           .limit(1);
         if (!inQueue || inQueue.length === 0) {
           return new Response(JSON.stringify({ error: "You must be in the queue to trigger matchmaking" }), {
@@ -121,13 +138,12 @@ Deno.serve(async (req) => {
           });
         }
       }
-      // poll is allowed for any authenticated user who is in an active match
       if (action === "poll") {
         const { data: activeMatch } = await supabase
           .from("matches")
           .select("id")
           .eq("status", "active")
-          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`)
           .limit(1);
         if (!activeMatch || activeMatch.length === 0) {
           return new Response(JSON.stringify({ error: "You must be in an active match to poll" }), {
@@ -138,94 +154,148 @@ Deno.serve(async (req) => {
       }
     }
 
-    // MATCHMAKING: Try to pair queued players
+    // MATCHMAKING
     if (action === "matchmake") {
       const { data: queueEntries } = await supabase
         .from("queue")
-        .select("*, profiles:user_id(id, rating, cf_handle)")
+        .select("*")
         .order("created_at", { ascending: true });
 
-      if (!queueEntries || queueEntries.length < 2) {
-        return new Response(JSON.stringify({ message: "Not enough players" }), {
+      if (!queueEntries || queueEntries.length === 0) {
+        return new Response(JSON.stringify({ message: "No players in queue" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Try to pair first two compatible players
-      for (let i = 0; i < queueEntries.length; i++) {
-        for (let j = i + 1; j < queueEntries.length; j++) {
-          const a = queueEntries[i];
-          const b = queueEntries[j];
+      // Fetch problems once for all pairing attempts
+      let problemData;
+      try {
+        const problemRes = await fetchWithTimeout("https://codeforces.com/api/problemset.problems", 10000);
+        problemData = await problemRes.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Codeforces API timeout" }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-          // Fetch a random problem with timeout
-          let problemData;
-          try {
-            const problemRes = await fetchWithTimeout("https://codeforces.com/api/problemset.problems", 10000);
-            problemData = await problemRes.json();
-          } catch {
-            return new Response(JSON.stringify({ error: "Codeforces API timeout" }), {
-              status: 502,
+      if (problemData.status !== "OK") {
+        return new Response(JSON.stringify({ error: "Codeforces API error" }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get blacklisted problems
+      const { data: blacklist } = await supabase
+        .from("blacklisted_problems")
+        .select("contest_id, problem_index");
+      const blackSet = new Set((blacklist || []).map((b: any) => `${b.contest_id}${b.problem_index}`));
+
+      // Try to pair compatible players
+      if (queueEntries.length >= 2) {
+        for (let i = 0; i < queueEntries.length; i++) {
+          for (let j = i + 1; j < queueEntries.length; j++) {
+            const a = queueEntries[i];
+            const b = queueEntries[j];
+
+            // Use intersection of rating ranges
+            const minRating = Math.max(a.rating_min, b.rating_min);
+            const maxRating = Math.min(a.rating_max, b.rating_max);
+            if (minRating > maxRating) continue;
+
+            const problems = problemData.result.problems.filter(
+              (p: any) => p.rating && p.rating >= minRating && p.rating <= maxRating && p.contestId
+                && !blackSet.has(`${p.contestId}${p.index}`)
+            );
+
+            if (problems.length === 0) continue;
+
+            const problem = problems[Math.floor(Math.random() * problems.length)];
+            const startTime = new Date(Date.now() + 10000).toISOString();
+
+            const { data: match, error: matchError } = await supabase.from("matches").insert({
+              player1_id: a.user_id,
+              player2_id: b.user_id,
+              contest_id: problem.contestId,
+              problem_index: problem.index,
+              problem_name: problem.name,
+              problem_rating: problem.rating,
+              start_time: startTime,
+              duration: Math.min(a.duration, b.duration),
+              status: "active",
+            }).select().single();
+
+            if (matchError) {
+              console.error("Match creation error:", matchError);
+              continue;
+            }
+
+            // Remove both from queue
+            await supabase.from("queue").delete().in("id", [a.id, b.id]);
+
+            return new Response(JSON.stringify({ match }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
-          
-          if (problemData.status !== "OK") continue;
-
-          // Get blacklisted problems
-          const { data: blacklist } = await supabase
-            .from("blacklisted_problems")
-            .select("contest_id, problem_index");
-          const blackSet = new Set((blacklist || []).map((b: any) => `${b.contest_id}${b.problem_index}`));
-
-          const problems = problemData.result.problems.filter(
-            (p: any) => p.rating && p.rating >= a.rating_min && p.rating <= a.rating_max && p.contestId
-              && !blackSet.has(`${p.contestId}${p.index}`)
-          );
-          
-          if (problems.length === 0) continue;
-
-          const problem = problems[Math.floor(Math.random() * problems.length)];
-
-          const startTime = new Date(Date.now() + 10000).toISOString(); // Start in 10s
-
-          // Create match
-          const { data: match, error: matchError } = await supabase.from("matches").insert({
-            player1_id: a.user_id,
-            player2_id: b.user_id,
-            contest_id: problem.contestId,
-            problem_index: problem.index,
-            problem_name: problem.name,
-            problem_rating: problem.rating,
-            start_time: startTime,
-            duration: a.duration,
-            status: "active",
-          }).select().single();
-
-          if (matchError) {
-            console.error("Match creation error:", matchError);
-            continue;
-          }
-
-          // Remove from queue
-          await supabase.from("queue").delete().in("id", [a.id, b.id]);
-
-          return new Response(JSON.stringify({ match }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
         }
       }
 
-      return new Response(JSON.stringify({ message: "No compatible pairs" }), {
+      // No human pair found. Check if any player has been waiting > 30s — give them a bot match
+      const now = Date.now();
+      for (const entry of queueEntries) {
+        const waitTime = now - new Date(entry.created_at).getTime();
+        if (waitTime < 30000) continue; // wait at least 30s before bot
+
+        // Find a suitable problem
+        const problems = problemData.result.problems.filter(
+          (p: any) => p.rating && p.rating >= entry.rating_min && p.rating <= entry.rating_max && p.contestId
+            && !blackSet.has(`${p.contestId}${p.index}`)
+        );
+        if (problems.length === 0) continue;
+
+        const problem = problems[Math.floor(Math.random() * problems.length)];
+        const startTime = new Date(Date.now() + 5000).toISOString();
+
+        // Create match with match_type = 'bot' and no player2 (bot match)
+        const { data: match, error: matchError } = await supabase.from("matches").insert({
+          player1_id: entry.user_id,
+          player2_id: null,
+          contest_id: problem.contestId,
+          problem_index: problem.index,
+          problem_name: problem.name,
+          problem_rating: problem.rating,
+          start_time: startTime,
+          duration: entry.duration,
+          status: "active",
+          match_type: "bot",
+        }).select().single();
+
+        if (matchError) {
+          console.error("Bot match creation error:", matchError);
+          continue;
+        }
+
+        await supabase.from("queue").delete().eq("id", entry.id);
+
+        return new Response(JSON.stringify({ match, bot: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ message: "No compatible pairs yet, keep waiting..." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // POLL: Check active matches for solutions
+    // POLL: Check active matches for CF solutions
     if (action === "poll") {
-      const { data: activeMatches } = await supabase
-        .from("matches")
-        .select("*")
-        .eq("status", "active");
+      // Only poll matches the caller is in (unless admin)
+      let matchQuery = supabase.from("matches").select("*").eq("status", "active");
+      if (!isAdminResult) {
+        matchQuery = matchQuery.or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`);
+      }
+      const { data: activeMatches } = await matchQuery;
 
       if (!activeMatches || activeMatches.length === 0) {
         return new Response(JSON.stringify({ message: "No active matches" }), {
@@ -236,93 +306,146 @@ Deno.serve(async (req) => {
       const results = [];
 
       for (const match of activeMatches) {
-        const matchStartTime = new Date(match.start_time!).getTime() / 1000;
+        if (!match.start_time) continue;
+        const matchStartTime = new Date(match.start_time).getTime() / 1000;
         const matchEndTime = matchStartTime + match.duration;
         const now = Date.now() / 1000;
 
+        // Skip bot matches for CF polling (bot has no cf_handle)
+        const isBotMatch = match.match_type === "bot";
+
         // Check if match expired
         if (now > matchEndTime) {
-          const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
-          const { data: p2 } = await supabase.from("profiles").select("*").eq("id", match.player2_id!).single();
+          if (isBotMatch) {
+            // Bot match: if player solved, they win; otherwise draw (no rating change)
+            let winnerId = null;
+            if (match.player1_solved_at) winnerId = match.player1_id;
 
-          let winnerId = null;
-          let scoreA = 0.5;
+            await supabase.from("matches").update({
+              status: "finished",
+              winner_id: winnerId,
+              player1_rating_change: 0,
+              player2_rating_change: 0,
+            }).eq("id", match.id);
 
-          if (match.player1_solved_at && !match.player2_solved_at) {
-            winnerId = match.player1_id;
-            scoreA = 1;
-          } else if (!match.player1_solved_at && match.player2_solved_at) {
-            winnerId = match.player2_id;
-            scoreA = 0;
-          } else if (match.player1_solved_at && match.player2_solved_at) {
-            winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at)
-              ? match.player1_id : match.player2_id;
-            scoreA = winnerId === match.player1_id ? 1 : 0;
+            results.push({ matchId: match.id, status: "finished", winnerId, bot: true });
+          } else {
+            // Normal match expiry with rating changes
+            const { data: p1 } = await supabase.from("profiles").select("*").eq("id", match.player1_id).single();
+            const { data: p2 } = await supabase.from("profiles").select("*").eq("id", match.player2_id!).single();
+            if (!p1 || !p2) continue;
+
+            let winnerId = null;
+            let scoreA = 0.5;
+
+            if (match.player1_solved_at && !match.player2_solved_at) {
+              winnerId = match.player1_id;
+              scoreA = 1;
+            } else if (!match.player1_solved_at && match.player2_solved_at) {
+              winnerId = match.player2_id;
+              scoreA = 0;
+            } else if (match.player1_solved_at && match.player2_solved_at) {
+              winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at)
+                ? match.player1_id : match.player2_id;
+              scoreA = winnerId === match.player1_id ? 1 : 0;
+            }
+
+            const elo = calculateElo(p1.rating, p2.rating, scoreA);
+
+            await supabase.from("matches").update({
+              status: "finished",
+              winner_id: winnerId,
+              player1_rating_change: elo.changeA,
+              player2_rating_change: elo.changeB,
+            }).eq("id", match.id);
+
+            await supabase.from("profiles").update({
+              rating: p1.rating + elo.changeA,
+              rank: getRank(p1.rating + elo.changeA),
+              wins: p1.wins + (scoreA === 1 ? 1 : 0),
+              losses: p1.losses + (scoreA === 0 ? 1 : 0),
+              draws: p1.draws + (scoreA === 0.5 ? 1 : 0),
+            }).eq("id", match.player1_id);
+
+            await supabase.from("profiles").update({
+              rating: p2.rating + elo.changeB,
+              rank: getRank(p2.rating + elo.changeB),
+              wins: p2.wins + (scoreA === 0 ? 1 : 0),
+              losses: p2.losses + (scoreA === 1 ? 1 : 0),
+              draws: p2.draws + (scoreA === 0.5 ? 1 : 0),
+            }).eq("id", match.player2_id!);
+
+            results.push({ matchId: match.id, status: "finished", winnerId });
           }
-
-          const elo = calculateElo(p1!.rating, p2!.rating, scoreA);
-
-          await supabase.from("matches").update({
-            status: "finished",
-            winner_id: winnerId,
-            player1_rating_change: elo.changeA,
-            player2_rating_change: elo.changeB,
-          }).eq("id", match.id);
-
-          await supabase.from("profiles").update({
-            rating: p1!.rating + elo.changeA,
-            rank: getRank(p1!.rating + elo.changeA),
-            wins: p1!.wins + (scoreA === 1 ? 1 : 0),
-            losses: p1!.losses + (scoreA === 0 ? 1 : 0),
-            draws: p1!.draws + (scoreA === 0.5 ? 1 : 0),
-          }).eq("id", match.player1_id);
-
-          await supabase.from("profiles").update({
-            rating: p2!.rating + elo.changeB,
-            rank: getRank(p2!.rating + elo.changeB),
-            wins: p2!.wins + (scoreA === 0 ? 1 : 0),
-            losses: p2!.losses + (scoreA === 1 ? 1 : 0),
-            draws: p2!.draws + (scoreA === 0.5 ? 1 : 0),
-          }).eq("id", match.player2_id!);
-
-          results.push({ matchId: match.id, status: "finished", winnerId });
           continue;
         }
 
-        // Poll CF submissions for each player
-        for (const playerField of ["player1", "player2"] as const) {
-          const playerId = match[`${playerField}_id` as keyof typeof match] as string;
-          if (!playerId || match[`${playerField}_solved_at` as keyof typeof match]) continue;
+        // Poll CF submissions for player1 (always exists)
+        if (!match.player1_solved_at) {
+          const { data: player } = await supabase.from("profiles").select("cf_handle").eq("id", match.player1_id).single();
+          if (player?.cf_handle) {
+            try {
+              const cfRes = await fetchWithTimeout(
+                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
+                10000
+              );
+              const cfData = await cfRes.json();
+              if (cfData.status === "OK") {
+                const solved = cfData.result.find((sub: CFSubmission) =>
+                  sub.problem.contestId === match.contest_id &&
+                  sub.problem.index === match.problem_index &&
+                  sub.verdict === "OK" &&
+                  sub.creationTimeSeconds >= matchStartTime
+                );
+                if (solved) {
+                  const solvedAt = new Date(solved.creationTimeSeconds * 1000).toISOString();
+                  await supabase.from("matches").update({ player1_solved_at: solvedAt }).eq("id", match.id);
+                  results.push({ matchId: match.id, player: "player1", solvedAt });
 
-          const { data: player } = await supabase.from("profiles").select("cf_handle").eq("id", playerId).single();
-          if (!player?.cf_handle) continue;
-
-          try {
-            const cfRes = await fetchWithTimeout(
-              `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
-              10000
-            );
-            const cfData = await cfRes.json();
-
-            if (cfData.status !== "OK") continue;
-
-            const solved = cfData.result.find((sub: CFSubmission) =>
-              sub.problem.contestId === match.contest_id &&
-              sub.problem.index === match.problem_index &&
-              sub.verdict === "OK" &&
-              sub.creationTimeSeconds >= matchStartTime
-            );
-
-            if (solved) {
-              const solvedAt = new Date(solved.creationTimeSeconds * 1000).toISOString();
-              await supabase.from("matches").update({
-                [`${playerField}_solved_at`]: solvedAt,
-              }).eq("id", match.id);
-
-              results.push({ matchId: match.id, player: playerField, solvedAt });
+                  // In bot matches, if player solves it, end the match immediately (they win, no rating change)
+                  if (isBotMatch) {
+                    await supabase.from("matches").update({
+                      status: "finished",
+                      winner_id: match.player1_id,
+                      player1_rating_change: 0,
+                      player2_rating_change: 0,
+                    }).eq("id", match.id);
+                    results.push({ matchId: match.id, status: "finished", winnerId: match.player1_id, bot: true });
+                  }
+                }
+              }
+            } catch (e) {
+              console.error(`CF API error for player1:`, e);
             }
-          } catch (e) {
-            console.error(`CF API error for ${player.cf_handle}:`, e);
+          }
+        }
+
+        // Poll player2 only if it's not a bot match and player2 exists
+        if (!isBotMatch && match.player2_id && !match.player2_solved_at) {
+          const { data: player } = await supabase.from("profiles").select("cf_handle").eq("id", match.player2_id).single();
+          if (player?.cf_handle) {
+            try {
+              const cfRes = await fetchWithTimeout(
+                `https://codeforces.com/api/user.status?handle=${encodeURIComponent(player.cf_handle)}&count=20`,
+                10000
+              );
+              const cfData = await cfRes.json();
+              if (cfData.status === "OK") {
+                const solved = cfData.result.find((sub: CFSubmission) =>
+                  sub.problem.contestId === match.contest_id &&
+                  sub.problem.index === match.problem_index &&
+                  sub.verdict === "OK" &&
+                  sub.creationTimeSeconds >= matchStartTime
+                );
+                if (solved) {
+                  const solvedAt = new Date(solved.creationTimeSeconds * 1000).toISOString();
+                  await supabase.from("matches").update({ player2_solved_at: solvedAt }).eq("id", match.id);
+                  results.push({ matchId: match.id, player: "player2", solvedAt });
+                }
+              }
+            } catch (e) {
+              console.error(`CF API error for player2:`, e);
+            }
           }
         }
       }
@@ -337,7 +460,6 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    // Return generic error to client, log details server-side
     console.error("Arena engine error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
