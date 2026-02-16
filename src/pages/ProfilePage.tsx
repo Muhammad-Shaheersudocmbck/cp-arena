@@ -285,14 +285,20 @@ export default function ProfilePage() {
           <div className="space-y-2">
             {matchHistory.map((match) => {
               const isP1 = match.player1_id === profile.id;
-              const won = match.winner_id === profile.id;
-              const draw = !match.winner_id;
+              const isBotMatch = match.match_type === "bot";
+              const won = isBotMatch
+                ? (match.winner_id === profile.id)
+                : (match.winner_id === profile.id);
+              const draw = !match.winner_id && !(isBotMatch && match.player1_rating_change != null && match.player1_rating_change < 0);
               const ratingChange = isP1 ? match.player1_rating_change : match.player2_rating_change;
+              // Skip +0 changes in display
+              if (ratingChange === 0) return null;
               return (
                 <Link key={match.id} to={`/match/${match.id}`} className="flex items-center justify-between rounded-lg border border-border bg-secondary/50 p-3 transition-colors hover:border-primary/30">
                   <div className="flex items-center gap-3">
                     <div className={`h-2 w-2 rounded-full ${won ? "bg-primary" : draw ? "bg-muted-foreground" : "bg-destructive"}`} />
                     <span className="font-mono text-sm">{match.contest_id}{match.problem_index}</span>
+                    {isBotMatch && <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">BOT</span>}
                     <span className="text-xs text-muted-foreground">{new Date(match.created_at).toLocaleDateString()}</span>
                   </div>
                   {ratingChange != null && (

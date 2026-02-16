@@ -163,14 +163,15 @@ async function getUserAvgSolveTime(supabase: any, profileId: string): Promise<nu
   return solveTimes.reduce((a, b) => a + b, 0) / solveTimes.length;
 }
 
-// Send a bot message to the match chat
-async function sendBotMessage(supabase: any, matchId: string) {
-  const botId = "00000000-0000-0000-0000-000000000000";
+// Send a bot message to the match chat (uses player1's id as sender with bot prefix)
+async function sendBotMessage(supabase: any, matchId: string, player1Id: string) {
   const msg = BOT_MESSAGES[Math.floor(Math.random() * BOT_MESSAGES.length)];
+  // Insert as a system-style message using player1's match context
+  // We'll store bot messages with a special prefix so the UI can identify them
   await supabase.from("match_messages").insert({
     match_id: matchId,
-    user_id: botId,
-    message: msg,
+    user_id: player1Id,
+    message: `[BOT] ${msg}`,
   });
 }
 
@@ -245,7 +246,10 @@ Deno.serve(async (req) => {
       if (action === "poll") {
         const { data: activeMatch } = await supabase.from("matches").select("id").eq("status", "active")
           .or(`player1_id.eq.${profileId},player2_id.eq.${profileId}`).limit(1);
-        if (!activeMatch || activeMatch.length === 0) {
+        // Also check for bot matches where player2_id is null
+        const { data: botMatch } = await supabase.from("matches").select("id").eq("status", "active")
+          .eq("player1_id", profileId).eq("match_type", "bot").limit(1);
+        if ((!activeMatch || activeMatch.length === 0) && (!botMatch || botMatch.length === 0)) {
           return new Response(JSON.stringify({ error: "You must be in an active match to poll" }), {
             status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -373,7 +377,7 @@ Deno.serve(async (req) => {
 
         const { data: match, error: matchError } = await supabase.from("matches").insert({
           player1_id: entry.user_id,
-          player2_id: "00000000-0000-0000-0000-000000000000",
+          player2_id: null,
           contest_id: problem.contestId,
           problem_index: problem.index,
           problem_name: problem.name,
@@ -390,7 +394,7 @@ Deno.serve(async (req) => {
         await supabase.from("queue").delete().eq("id", entry.id);
 
         // Send initial bot taunt
-        await sendBotMessage(supabase, match.id);
+        await sendBotMessage(supabase, match.id, entry.user_id);
 
         return new Response(JSON.stringify({ match, bot: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -441,11 +445,11 @@ Deno.serve(async (req) => {
             if (match.player1_solved_at && !botSolvedBeforeEnd) {
               winnerId = match.player1_id; scoreA = 1;
             } else if (!match.player1_solved_at && botSolvedBeforeEnd) {
-              winnerId = match.player2_id; scoreA = 0;
+              winnerId = "bot"; scoreA = 0;
             } else if (match.player1_solved_at && botSolvedBeforeEnd) {
-              winnerId = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at!)
-                ? match.player1_id : match.player2_id;
-              scoreA = winnerId === match.player1_id ? 1 : 0;
+              const playerWins = new Date(match.player1_solved_at) <= new Date(match.player2_solved_at!);
+              winnerId = playerWins ? match.player1_id : "bot";
+              scoreA = playerWins ? 1 : 0;
             }
 
             const p1Games = p1.wins + p1.losses + p1.draws;
@@ -455,7 +459,7 @@ Deno.serve(async (req) => {
 
             await supabase.from("matches").update({
               status: "finished",
-              winner_id: winnerId,
+              winner_id: winnerId === "bot" ? null : winnerId,
               player1_rating_change: elo.changeA,
               player2_rating_change: 0,
             }).eq("id", match.id);
@@ -523,7 +527,7 @@ Deno.serve(async (req) => {
 
         // Bot match: send random taunt ~20% of polls
         if (isBotMatch && Math.random() < 0.2) {
-          await sendBotMessage(supabase, match.id);
+          await sendBotMessage(supabase, match.id, match.player1_id);
         }
 
         // Poll CF submissions for player1
@@ -592,7 +596,7 @@ Deno.serve(async (req) => {
               const elo = calculateElo(p1.rating, botRating, 0, getDynamicK(p1Games), 32);
               await supabase.from("matches").update({
                 status: "finished",
-                winner_id: match.player2_id,
+                winner_id: null, // bot won but bot has no profile, winner_id stays null
                 player1_rating_change: elo.changeA,
                 player2_rating_change: 0,
               }).eq("id", match.id);
@@ -602,8 +606,8 @@ Deno.serve(async (req) => {
                 losses: p1.losses + 1,
               }).eq("id", match.player1_id);
               // Send final taunt
-              await sendBotMessage(supabase, match.id);
-              results.push({ matchId: match.id, status: "finished", winnerId: match.player2_id, bot: true });
+              await sendBotMessage(supabase, match.id, match.player1_id);
+              results.push({ matchId: match.id, status: "finished", winnerId: null, botWon: true, bot: true });
             }
           }
         }
