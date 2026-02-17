@@ -498,6 +498,142 @@ export type Database = {
           },
         ]
       }
+      match_players: {
+        Row: {
+          id: string
+          joined_at: string
+          match_id: string
+          player_id: string
+          rating_change: number | null
+          solved_count: number
+          team: number | null
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          match_id: string
+          player_id: string
+          rating_change?: number | null
+          solved_count?: number
+          team?: number | null
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          match_id?: string
+          player_id?: string
+          rating_change?: number | null
+          solved_count?: number
+          team?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_players_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      match_problems: {
+        Row: {
+          contest_id: number
+          id: string
+          match_id: string
+          problem_index: string
+          problem_name: string | null
+          problem_order: number
+          problem_rating: number | null
+        }
+        Insert: {
+          contest_id: number
+          id?: string
+          match_id: string
+          problem_index: string
+          problem_name?: string | null
+          problem_order?: number
+          problem_rating?: number | null
+        }
+        Update: {
+          contest_id?: number
+          id?: string
+          match_id?: string
+          problem_index?: string
+          problem_name?: string | null
+          problem_order?: number
+          problem_rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_problems_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      match_submissions: {
+        Row: {
+          id: string
+          match_id: string
+          player_id: string
+          problem_order: number
+          solved_at: string
+        }
+        Insert: {
+          id?: string
+          match_id: string
+          player_id: string
+          problem_order: number
+          solved_at?: string
+        }
+        Update: {
+          id?: string
+          match_id?: string
+          player_id?: string
+          problem_order?: number
+          solved_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_submissions_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_submissions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_submissions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       matches: {
         Row: {
           challenge_code: string | null
@@ -506,19 +642,23 @@ export type Database = {
           draw_offered_by: string | null
           duration: number
           id: string
+          lobby_mode: string
           match_type: string
+          max_players: number
           player1_id: string
           player1_rating_change: number | null
           player1_solved_at: string | null
           player2_id: string | null
           player2_rating_change: number | null
           player2_solved_at: string | null
+          problem_count: number
           problem_index: string | null
           problem_name: string | null
           problem_rating: number | null
           resigned_by: string | null
           start_time: string | null
           status: Database["public"]["Enums"]["match_status"]
+          team_size: number | null
           winner_id: string | null
         }
         Insert: {
@@ -528,19 +668,23 @@ export type Database = {
           draw_offered_by?: string | null
           duration?: number
           id?: string
+          lobby_mode?: string
           match_type?: string
+          max_players?: number
           player1_id: string
           player1_rating_change?: number | null
           player1_solved_at?: string | null
           player2_id?: string | null
           player2_rating_change?: number | null
           player2_solved_at?: string | null
+          problem_count?: number
           problem_index?: string | null
           problem_name?: string | null
           problem_rating?: number | null
           resigned_by?: string | null
           start_time?: string | null
           status?: Database["public"]["Enums"]["match_status"]
+          team_size?: number | null
           winner_id?: string | null
         }
         Update: {
@@ -550,19 +694,23 @@ export type Database = {
           draw_offered_by?: string | null
           duration?: number
           id?: string
+          lobby_mode?: string
           match_type?: string
+          max_players?: number
           player1_id?: string
           player1_rating_change?: number | null
           player1_solved_at?: string | null
           player2_id?: string | null
           player2_rating_change?: number | null
           player2_solved_at?: string | null
+          problem_count?: number
           problem_index?: string | null
           problem_name?: string | null
           problem_rating?: number | null
           resigned_by?: string | null
           start_time?: string | null
           status?: Database["public"]["Enums"]["match_status"]
+          team_size?: number | null
           winner_id?: string | null
         }
         Relationships: [
