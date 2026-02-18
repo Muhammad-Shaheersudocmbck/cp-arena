@@ -639,6 +639,44 @@ Deno.serve(async (req) => {
             }
           }
         }
+
+        // Check if both players solved in 1v1 — end match immediately
+        if (!isBotMatch && match.player2_id) {
+          // Re-fetch match to get latest solved_at values
+          const { data: freshMatch } = await supabase.from("matches").select("*").eq("id", match.id).single();
+          if (freshMatch && freshMatch.status === "active" && freshMatch.player1_solved_at && freshMatch.player2_solved_at) {
+            // Both solved — winner is whoever solved first
+            const p1Time = new Date(freshMatch.player1_solved_at).getTime();
+            const p2Time = new Date(freshMatch.player2_solved_at).getTime();
+            const winnerId = p1Time <= p2Time ? freshMatch.player1_id : freshMatch.player2_id;
+            const scoreA = winnerId === freshMatch.player1_id ? 1 : 0;
+
+            const { data: p1 } = await supabase.from("profiles").select("*").eq("id", freshMatch.player1_id).single();
+            const { data: p2 } = await supabase.from("profiles").select("*").eq("id", freshMatch.player2_id!).single();
+            if (p1 && p2) {
+              const elo = calculateElo(p1.rating, p2.rating, scoreA, getDynamicK(p1.wins + p1.losses + p1.draws), getDynamicK(p2.wins + p2.losses + p2.draws));
+              await supabase.from("matches").update({
+                status: "finished",
+                winner_id: winnerId,
+                player1_rating_change: elo.changeA,
+                player2_rating_change: elo.changeB,
+              }).eq("id", match.id);
+              await supabase.from("profiles").update({
+                rating: p1.rating + elo.changeA,
+                rank: getRank(p1.rating + elo.changeA),
+                wins: p1.wins + (scoreA === 1 ? 1 : 0),
+                losses: p1.losses + (scoreA === 0 ? 1 : 0),
+              }).eq("id", freshMatch.player1_id);
+              await supabase.from("profiles").update({
+                rating: p2.rating + elo.changeB,
+                rank: getRank(p2.rating + elo.changeB),
+                wins: p2.wins + (scoreA === 0 ? 1 : 0),
+                losses: p2.losses + (scoreA === 1 ? 1 : 0),
+              }).eq("id", freshMatch.player2_id!);
+              results.push({ matchId: match.id, status: "finished", winnerId });
+            }
+          }
+        }
       }
 
       return new Response(JSON.stringify({ results }), {

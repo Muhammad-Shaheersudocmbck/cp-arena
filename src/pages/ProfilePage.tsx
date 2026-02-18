@@ -118,8 +118,8 @@ export default function ProfilePage() {
   const verifyCfHandle = async () => {
     if (!cfHandleInput.trim() || !myProfile) return;
     const handle = cfHandleInput.trim();
-    if (!/^[a-zA-Z0-9_-]{3,24}$/.test(handle)) {
-      toast.error("Invalid handle format (3-24 chars, letters/digits/hyphens only)");
+    if (!/^[a-zA-Z0-9._-]{3,24}$/.test(handle)) {
+      toast.error("Invalid handle format (3-24 chars, letters/digits/dots/underscores/hyphens)");
       return;
     }
     setVerifying(true);
@@ -238,11 +238,16 @@ export default function ProfilePage() {
         </div>
 
         {/* CF Handle connect */}
-        {isOwnProfile && !profile.cf_handle && (
+        {isOwnProfile && (
           <div className="mt-6 rounded-lg border border-border bg-secondary/50 p-4">
-            <h3 className="mb-2 text-sm font-semibold">Connect Codeforces Handle</h3>
+            <h3 className="mb-2 text-sm font-semibold">
+              {profile.cf_handle ? "Change Codeforces Handle" : "Connect Codeforces Handle"}
+            </h3>
+            {profile.cf_handle && (
+              <p className="mb-2 text-xs text-muted-foreground">Currently linked: <span className="font-mono text-primary">{profile.cf_handle}</span></p>
+            )}
             <div className="flex gap-2">
-              <input value={cfHandleInput} onChange={(e) => setCfHandleInput(e.target.value)} placeholder="Your Codeforces handle" className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground" />
+              <input value={cfHandleInput} onChange={(e) => setCfHandleInput(e.target.value)} placeholder={profile.cf_handle ? "New Codeforces handle" : "Your Codeforces handle"} className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground" />
               <button onClick={verifyCfHandle} disabled={verifying || !cfHandleInput.trim()} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
                 {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Verify
               </button>
