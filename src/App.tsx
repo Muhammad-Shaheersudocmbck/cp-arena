@@ -16,6 +16,7 @@ import FriendsPage from "@/pages/FriendsPage";
 import MessagesPage from "@/pages/MessagesPage";
 import ChallengePage from "@/pages/ChallengePage";
 import BlogsPage from "@/pages/BlogsPage";
+import ContestsPage from "@/pages/ContestsPage";
 import AnnouncementsPage from "@/pages/AnnouncementsPage";
 import SupportPage from "@/pages/SupportPage";
 
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/friends" element={<FriendsPage />} />
               <Route path="/messages/:recipientId" element={<MessagesPage />} />
               <Route path="/challenge/:challengeCode" element={<ChallengePage />} />
+              <Route path="/contests" element={<ContestsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/announcements" element={<AnnouncementsPage />} />
               <Route path="/support" element={<SupportPage />} />

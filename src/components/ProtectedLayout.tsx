@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import Navbar from "@/components/Navbar";
 import { Lock } from "lucide-react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useWebNotifications } from "@/hooks/useWebNotifications";
 import type { SiteSetting } from "@/lib/types";
 
 export default function ProtectedLayout() {
@@ -12,6 +13,8 @@ export default function ProtectedLayout() {
 
   // Track online status
   useOnlineStatus();
+  // Enable web push notifications
+  useWebNotifications();
 
   const { data: maintenance } = useQuery({
     queryKey: ["maintenance-mode"],

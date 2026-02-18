@@ -101,6 +101,44 @@ export interface GroupMessage {
   created_at: string;
 }
 
+export interface Contest {
+  id: string;
+  title: string;
+  description: string;
+  created_by: string;
+  start_time: string | null;
+  duration: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContestAuthor {
+  id: string;
+  contest_id: string;
+  user_id: string;
+  added_by: string;
+  created_at: string;
+}
+
+export interface ContestProblem {
+  id: string;
+  contest_id: string;
+  problem_order: number;
+  problem_label: string;
+  problem_url: string;
+  problem_name: string;
+  points: number;
+  created_at: string;
+}
+
+export interface ContestRegistration {
+  id: string;
+  contest_id: string;
+  user_id: string;
+  registered_at: string;
+}
+
 export function getRankFromRating(rating: number): string {
   if (rating < 900) return "Beginner";
   if (rating < 1100) return "Newbie";
