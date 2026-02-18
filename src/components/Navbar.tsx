@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/matchmaking", label: "Arena", icon: Swords },
+  { href: "/contests", label: "Contests", icon: Trophy },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/friends", label: "Friends", icon: Users },
   { href: "/blogs", label: "Blogs", icon: PenLine },

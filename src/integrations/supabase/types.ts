@@ -189,6 +189,201 @@ export type Database = {
           },
         ]
       }
+      contest_authors: {
+        Row: {
+          added_by: string
+          contest_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          added_by: string
+          contest_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          added_by?: string
+          contest_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contest_authors_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_authors_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_authors_contest_id_fkey"
+            columns: ["contest_id"]
+            isOneToOne: false
+            referencedRelation: "contests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_authors_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_authors_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contest_problems: {
+        Row: {
+          contest_id: string
+          created_at: string
+          id: string
+          points: number | null
+          problem_label: string
+          problem_name: string | null
+          problem_order: number
+          problem_url: string
+        }
+        Insert: {
+          contest_id: string
+          created_at?: string
+          id?: string
+          points?: number | null
+          problem_label?: string
+          problem_name?: string | null
+          problem_order?: number
+          problem_url: string
+        }
+        Update: {
+          contest_id?: string
+          created_at?: string
+          id?: string
+          points?: number | null
+          problem_label?: string
+          problem_name?: string | null
+          problem_order?: number
+          problem_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contest_problems_contest_id_fkey"
+            columns: ["contest_id"]
+            isOneToOne: false
+            referencedRelation: "contests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contest_registrations: {
+        Row: {
+          contest_id: string
+          id: string
+          registered_at: string
+          user_id: string
+        }
+        Insert: {
+          contest_id: string
+          id?: string
+          registered_at?: string
+          user_id: string
+        }
+        Update: {
+          contest_id?: string
+          id?: string
+          registered_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contest_registrations_contest_id_fkey"
+            columns: ["contest_id"]
+            isOneToOne: false
+            referencedRelation: "contests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contests: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          duration: number
+          id: string
+          start_time: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          duration?: number
+          id?: string
+          start_time?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          duration?: number
+          id?: string
+          start_time?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       direct_messages: {
         Row: {
           created_at: string
