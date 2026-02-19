@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trophy, Plus, Clock, Users, ExternalLink, Trash2, UserPlus, X, Calendar } from "lucide-react";
+import { Trophy, Plus, Clock, Users, ExternalLink, Trash2, UserPlus, X, Calendar, Eye } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { SAFE_PROFILE_COLUMNS } from "@/lib/types";
 import type { Contest, ContestProblem, ContestAuthor, ContestRegistration, Profile } from "@/lib/types";
@@ -119,11 +120,20 @@ export default function ContestsPage() {
 
   const addProblem = useMutation({
     mutationFn: async (contestId: string) => {
+      // Extract CF contest ID and index from URL if it's a CF link
+      let cfContestId: number | null = null;
+      let cfProblemIdx: string | null = null;
+      const cfMatch = problemUrl.match(/codeforces\.com\/(?:contest|problemset\/problem)\/(\d+)\/(?:problem\/)?([A-Za-z]\d?)/);
+      if (cfMatch) {
+        cfContestId = parseInt(cfMatch[1]);
+        cfProblemIdx = cfMatch[2].toUpperCase();
+      }
       const existing = allProblems.filter(p => p.contest_id === contestId);
       const { error } = await supabase.from("contest_problems").insert({
         contest_id: contestId, problem_order: existing.length + 1,
         problem_label: problemLabel, problem_url: problemUrl,
         problem_name: problemName, points: problemPoints,
+        cf_contest_id: cfContestId, cf_problem_index: cfProblemIdx,
       } as any);
       if (error) throw error;
     },
@@ -233,6 +243,11 @@ export default function ContestsPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {contest.status === "published" && (
+              <Link to={`/contests/${contest.id}`} className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:border-primary/30 inline-flex items-center gap-1">
+                <Eye className="h-3 w-3" /> View
+              </Link>
+            )}
             {contest.status === "draft" && canEdit && (
               <button onClick={() => publishContest.mutate(contest.id)} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">Publish</button>
             )}
@@ -255,19 +270,26 @@ export default function ContestsPage() {
           </div>
         </div>
 
-        {/* Problems list */}
+        {/* Problems list - only show after start time */}
         {problems.length > 0 && contest.status !== "draft" && (
-          <div className="mt-3 space-y-1">
-            {problems.map(prob => (
-              <a key={prob.id} href={prob.problem_url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm transition-colors hover:border-primary/30">
-                <span className="font-mono font-bold text-primary">{prob.problem_label}</span>
-                <span>{prob.problem_name || "Problem"}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{prob.points}pts</span>
-                <ExternalLink className="h-3 w-3 text-muted-foreground" />
-              </a>
-            ))}
-          </div>
+          (() => {
+            const contestStarted = contest.start_time ? new Date(contest.start_time) <= new Date() : false;
+            return contestStarted ? (
+              <div className="mt-3 space-y-1">
+                {problems.map(prob => (
+                  <a key={prob.id} href={prob.problem_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm transition-colors hover:border-primary/30">
+                    <span className="font-mono font-bold text-primary">{prob.problem_label}</span>
+                    <span>{prob.problem_name || "Problem"}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{prob.points}pts</span>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-muted-foreground italic">Problems hidden until contest starts</p>
+            );
+          })()
         )}
 
         {/* Edit panel */}

@@ -129,6 +129,8 @@ export interface ContestProblem {
   problem_url: string;
   problem_name: string;
   points: number;
+  cf_contest_id?: number;
+  cf_problem_index?: string;
   created_at: string;
 }
 

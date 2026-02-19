@@ -17,6 +17,7 @@ import MessagesPage from "@/pages/MessagesPage";
 import ChallengePage from "@/pages/ChallengePage";
 import BlogsPage from "@/pages/BlogsPage";
 import ContestsPage from "@/pages/ContestsPage";
+import ContestDetailPage from "@/pages/ContestDetailPage";
 import AnnouncementsPage from "@/pages/AnnouncementsPage";
 import SupportPage from "@/pages/SupportPage";
 
@@ -46,6 +47,7 @@ const App = () => (
               <Route path="/messages/:recipientId" element={<MessagesPage />} />
               <Route path="/challenge/:challengeCode" element={<ChallengePage />} />
               <Route path="/contests" element={<ContestsPage />} />
+              <Route path="/contests/:contestId" element={<ContestDetailPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/announcements" element={<AnnouncementsPage />} />
               <Route path="/support" element={<SupportPage />} />

@@ -251,6 +251,8 @@ export type Database = {
       }
       contest_problems: {
         Row: {
+          cf_contest_id: number | null
+          cf_problem_index: string | null
           contest_id: string
           created_at: string
           id: string
@@ -261,6 +263,8 @@ export type Database = {
           problem_url: string
         }
         Insert: {
+          cf_contest_id?: number | null
+          cf_problem_index?: string | null
           contest_id: string
           created_at?: string
           id?: string
@@ -271,6 +275,8 @@ export type Database = {
           problem_url: string
         }
         Update: {
+          cf_contest_id?: number | null
+          cf_problem_index?: string | null
           contest_id?: string
           created_at?: string
           id?: string
@@ -326,6 +332,111 @@ export type Database = {
           },
           {
             foreignKeyName: "contest_registrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contest_standings: {
+        Row: {
+          contest_id: string
+          id: string
+          penalty_time: number
+          problems_solved: number
+          score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contest_id: string
+          id?: string
+          penalty_time?: number
+          problems_solved?: number
+          score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contest_id?: string
+          id?: string
+          penalty_time?: number
+          problems_solved?: number
+          score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contest_standings_contest_id_fkey"
+            columns: ["contest_id"]
+            isOneToOne: false
+            referencedRelation: "contests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_standings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_standings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contest_submissions: {
+        Row: {
+          contest_id: string
+          id: string
+          problem_id: string
+          solved_at: string
+          user_id: string
+        }
+        Insert: {
+          contest_id: string
+          id?: string
+          problem_id: string
+          solved_at?: string
+          user_id: string
+        }
+        Update: {
+          contest_id?: string
+          id?: string
+          problem_id?: string
+          solved_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contest_submissions_contest_id_fkey"
+            columns: ["contest_id"]
+            isOneToOne: false
+            referencedRelation: "contests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_submissions_problem_id_fkey"
+            columns: ["problem_id"]
+            isOneToOne: false
+            referencedRelation: "contest_problems"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contest_submissions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "public_profiles"
